@@ -1,22 +1,22 @@
 import torch
+from nltk.tokenize import sent_tokenize
 from transformers import pipeline
 from ..models import Labels, ClaimResult
+from ..config import SUPPORTED_LANGUAGES, DEFAULT_MODEL
 from .base import ClassifierContract
-from nltk.tokenize import sent_tokenize
+
 
 class DeBERTaClassifier(ClassifierContract):
-    SUPPORTED_LANGUAGES = ("english", "portuguese")
-
     def __init__(
         self,
-        model_name: str = "cross-encoder/nli-deberta-v3-base",
+        model_name: str = DEFAULT_MODEL,
         device: int | None = None,
         language: str = "english"
     ):
-        if language not in self.SUPPORTED_LANGUAGES:
+        if language not in SUPPORTED_LANGUAGES:
             raise ValueError(
                 f"Language '{language}' is not supported. "
-                f"Choose from: {self.SUPPORTED_LANGUAGES}"
+                f"Choose from: {SUPPORTED_LANGUAGES}"
             )
         self.language = language
 
@@ -31,7 +31,7 @@ class DeBERTaClassifier(ClassifierContract):
             device=device
         )
 
-    def classify(self, claim: str, context: str) -> ClaimResult:        
+    def classify(self, claim: str, context: str) -> ClaimResult:
         sentences = sent_tokenize(context, language=self.language)
 
         best_sentence = None
@@ -63,7 +63,6 @@ class DeBERTaClassifier(ClassifierContract):
 
         labels = best_result["labels"]
         scores = best_result["scores"]
-
         top_label = labels[0]
         top_score = scores[0]
 

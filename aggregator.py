@@ -1,20 +1,19 @@
-from models import Labels, ClaimResult, ValidationResult
+from .models import Labels, ClaimResult, ValidationResult
+from .config import SUPPORTED_LANGUAGES, DEFAULT_THRESHOLD
 from typing import Optional
 
 
 class Aggregator:
-    SUPPORTED_LANGUAGES = ("en", "pt")
-
     def __init__(
         self,
         weights: Optional[dict] = None,
-        threshold: float = 0.5,
-        language: str = "en"
+        threshold: float = DEFAULT_THRESHOLD,
+        language: str = "english"
     ):
-        if language not in self.SUPPORTED_LANGUAGES:
+        if language not in SUPPORTED_LANGUAGES:
             raise ValueError(
                 f"Language '{language}' is not supported. "
-                f"Choose from: {self.SUPPORTED_LANGUAGES}"
+                f"Choose from: {SUPPORTED_LANGUAGES}"
             )
 
         self.threshold = threshold
@@ -58,7 +57,7 @@ class Aggregator:
         )
 
     def _empty_summary(self) -> str:
-        if self.language == "pt":
+        if self.language == "portuguese":
             return "Nenhuma afirmação foi encontrada para verificar."
         return "No claims were found to verify."
 
@@ -71,7 +70,7 @@ class Aggregator:
         total = len(claims)
         n_contradictions = len(contradictions)
 
-        if self.language == "pt":
+        if self.language == "portuguese":
             return self._build_summary_pt(total, n_contradictions, contradictions, score)
         return self._build_summary_en(total, n_contradictions, contradictions, score)
 

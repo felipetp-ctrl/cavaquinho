@@ -1,16 +1,15 @@
 import nltk
 from nltk.tokenize import sent_tokenize
 from .base import ExtractorContract
+from ..config import SUPPORTED_LANGUAGES
 
 
 class RuleExtractor(ExtractorContract):
-    SUPPORTED_LANGUAGES = ("english", "portuguese")
-
     def __init__(self, language: str = "english"):
-        if language not in self.SUPPORTED_LANGUAGES:
+        if language not in SUPPORTED_LANGUAGES:
             raise ValueError(
                 f"Language '{language}' is not supported. "
-                f"Choose from: {self.SUPPORTED_LANGUAGES}"
+                f"Choose from: {SUPPORTED_LANGUAGES}"
             )
         self.language = language
         nltk.download("punkt", quiet=True)
