@@ -26,7 +26,7 @@ class DeBERTaClassifier(ClassifierContract):
         self.model_name = model_name
         self.device = device
         self.pipeline = pipeline(
-            task="zero-shot-classification",
+            task="text-classification",
             model=model_name,
             device=device
         )
@@ -40,12 +40,14 @@ class DeBERTaClassifier(ClassifierContract):
 
         for sentence in sentences:
             result = self.pipeline(
-                sequences=claim,
-                candidate_labels=["entailment", "neutral", "contradiction"],
-                hypothesis_template="This statement is {}.",
+                f"{sentence} [SEP] {claim}",
+                truncation=True,
+                max_length=512
             )
 
-            contradiction_score = result["scores"][result["labels"].index("contradiction")]
+            label = result[0]["label"].lower()
+            score = result[0]["score"]
+            contradiction_score = score if label == "contradiction" else 0.0
 
             if contradiction_score > best_score:
                 best_score = contradiction_score
@@ -61,10 +63,8 @@ class DeBERTaClassifier(ClassifierContract):
                 reason=None
             )
 
-        labels = best_result["labels"]
-        scores = best_result["scores"]
-        top_label = labels[0]
-        top_score = scores[0]
+        top_label = best_result[0]["label"].lower()
+        top_score = best_result[0]["score"]
 
         label_map = {
             "entailment": Labels.VALUE_ENTAILMENT,
