@@ -14,7 +14,7 @@ DEFAULT_LANGUAGE: str = "english"
 
 THRESHOLDS: dict[str, float] = {
     "qa": 0.3,
-    "summarization": 0.4,
+    "summarization": 0.7,
     "dialogue": 0.35,
     "default": 0.5,
 }

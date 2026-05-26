@@ -260,12 +260,13 @@ Binary task: given a knowledge snippet (context) and an answer/summary, detect w
 | QA | 0.3 | 0.0 | **0.647** | 0.571 | **0.700** | **0.636** |
 | QA | 0.3 | 0.5 *(default)* | 0.551 | 0.660 | 0.341 | 0.500 |
 | Majority baseline | — | — | 0.512 | 0.677 | 0.000 | 0.338 |
-| Summarization | 0.4 | 0.5 | — | — | — | — |
+| Summarization | 0.7 | 0.5 | ~0.45¹ | ~0.41 | ~0.49 | ~0.45 |
 
-> Summarization results pending. Reproduce with:
+> ¹ Summarization results from n=500 calibration sweep. Reproduce with:
 
 ```bash
 python -m benchmarks.halueval_benchmark --subset qa --n 1000 --threshold 0.3 --workers 1
+python -m benchmarks.halueval_benchmark --subset summarization --n 1000 --threshold 0.7 --workers 1
 ```
 
 **Interpretation:**
@@ -293,11 +294,25 @@ Sweep of thresholds from 0.1 to 0.9. Use `--calibrate` to reproduce.
 
 Key finding: thresholds 0.1–0.4 maximise hallucination recall (0.84–0.85) at the cost of more false positives. The default 0.5 favours precision (+14pp) but misses ~53% of real hallucinations. Choose based on your application's cost of a missed hallucination vs. a false alarm.
 
+### Calibration curve — Summarization subset (n=500)
+
+| Threshold | Precision | Recall | F1-hal | F1-faith |
+|-----------|-----------|--------|--------|----------|
+| 0.1–0.4 | 0.506 | 1.000 | 0.672 | 0.000 |
+| 0.5 | 0.491 | 0.715 | 0.582 | 0.312 |
+| 0.6 | 0.478 | 0.652 | 0.552 | 0.333 |
+| 0.7 *(recommended)* | 0.452 | 0.372 | **0.408** | **0.494** |
+| 0.8 | 0.449 | 0.190 | 0.267 | 0.588 |
+| 0.9 | 0.468 | 0.087 | 0.147 | 0.634 |
+
+Key finding: for summarization, thresholds ≤ 0.4 collapse to majority-class prediction (all hallucinated). The NLI model tends to find spurious contradictions in long documents, inflating the aggregated score. Threshold 0.7 gives the best macro F1 (~0.45). This is a known limitation of sentence-level NLI applied to long documents — see [Limitations](#limitations).
+
 ## Limitations
 
 - **Faithfulness scope.** Cavaquinho verifies whether the response contradicts the provided context. It does not verify factual accuracy against external knowledge — that requires a separate retrieval or knowledge-base step.
 - **Context dependency.** Detection quality is proportional to context quality. Incomplete or irrelevant retrieved documents will reduce accuracy.
 - **False positives on ambiguous contexts.** When the context contains multiple facts about overlapping subjects, the NLI model may classify semantically consistent claims as contradictions.
+- **Long documents inflate scores.** For summarization tasks, sentence-level NLI over long source documents tends to find spurious contradictions, pushing the aggregated score up. Use a higher threshold (`THRESHOLDS["summarization"] = 0.7`) or truncate the context to the most relevant passages before calling `validate()`.
 - **Python 3.10+.** Tested on Python 3.11 and 3.12. Python 3.14 is functional but produces deprecation warnings from PyTorch.
 
 ## Roadmap
