@@ -39,20 +39,39 @@ class RuleExtractor(ExtractorContract):
         nltk.download("punkt", quiet=True)
         nltk.download("punkt_tab", quiet=True)
 
+    #: Claims with fewer tokens than this are considered short and will be
+    #: expanded with the query when one is provided.
+    SHORT_CLAIM_TOKENS: int = 5
+
     def extract(
         self, response: str, context: str = "", prompt: str | None = None
     ) -> list[str]:
         """Split *response* into sentences and return them as claims.
 
+        Short claims (fewer than :attr:`SHORT_CLAIM_TOKENS` tokens) are
+        expanded by prepending the *prompt* as context when available.  This
+        helps the NLI model handle one-word or short-phrase answers (e.g.
+        ``"Delhi"``) that lack enough semantic content on their own.
+
         Args:
             response: The LLM-generated text to split.
             context: Unused by this extractor; accepted for interface
                 compatibility.
-            prompt: Unused by this extractor; accepted for interface
-                compatibility.
+            prompt: Optional original user query.  When provided, short claims
+                are reformulated as ``"<prompt>: <claim>"`` to give the NLI
+                model sufficient context.
 
         Returns:
-            Non-empty, stripped sentence strings.
+            Non-empty, stripped claim strings, with short claims expanded
+            when a *prompt* is available.
         """
         sentences = sent_tokenize(response, language=self.language)
-        return [s.strip() for s in sentences if s.strip()]
+        claims = []
+        for s in sentences:
+            s = s.strip()
+            if not s:
+                continue
+            if prompt and len(s.split()) < self.SHORT_CLAIM_TOKENS:
+                s = f"{prompt.strip()}: {s}"
+            claims.append(s)
+        return claims

@@ -43,11 +43,29 @@ class TestRuleExtractor:
         with pytest.raises(ValueError, match="not supported"):
             RuleExtractor(language="klingon")
 
-    def test_context_and_prompt_ignored(self):
+    def test_context_ignored(self):
         ex = RuleExtractor()
         r1 = ex.extract("The sky is blue.", context="ignored context")
-        r2 = ex.extract("The sky is blue.", context="different context", prompt="some prompt")
+        r2 = ex.extract("The sky is blue.", context="different context")
         assert r1 == r2
+
+    def test_short_claim_expanded_with_prompt(self):
+        ex = RuleExtractor()
+        # "Delhi" is 1 token — should be prefixed with the prompt
+        result = ex.extract("Delhi", prompt="Where is the head office of the Oberoi Group?")
+        assert result == ["Where is the head office of the Oberoi Group?: Delhi"]
+
+    def test_long_claim_not_expanded(self):
+        ex = RuleExtractor()
+        # sentence has >= 5 tokens, should not be expanded
+        response = "The head office is located in New Delhi, India."
+        result = ex.extract(response, prompt="Where is the head office?")
+        assert result == [response]
+
+    def test_short_claim_without_prompt_unchanged(self):
+        ex = RuleExtractor()
+        result = ex.extract("Delhi")
+        assert result == ["Delhi"]
 
     def test_newline_separated_sentences(self):
         ex = RuleExtractor()

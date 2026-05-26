@@ -50,9 +50,13 @@ class ValidationResult:
         claims: Immutable sequence of per-claim results in extraction order.
         summary: Human-readable description of the result, localised to the
             configured language.
+        threshold: The decision threshold that was applied to produce
+            ``is_hallucination``.  Useful for auditing results produced with
+            task-specific thresholds from :data:`~cavaquinho.config.THRESHOLDS`.
     """
 
     score: float
     is_hallucination: bool
     claims: tuple[ClaimResult, ...]
     summary: str
+    threshold: float = 0.5

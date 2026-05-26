@@ -70,6 +70,7 @@ class DeBERTaClassifier(ClassifierContract):
         model_name: str = DEFAULT_MODEL,
         device: str | int | None = None,
         language: str = "english",
+        batch_size: int = 32,
     ):
         if language not in SUPPORTED_LANGUAGES:
             raise ValueError(
@@ -79,20 +80,26 @@ class DeBERTaClassifier(ClassifierContract):
         self.language = language
         self.model_name = model_name
         self.device = _resolve_device(device)
+        self.batch_size = batch_size
         self.pipeline = pipeline(
             task="text-classification",
             model=model_name,
             device=self.device,
         )
 
+    _LABEL_MAP = {
+        "entailment": Labels.VALUE_ENTAILMENT,
+        "neutral": Labels.VALUE_NEUTRAL,
+        "contradiction": Labels.VALUE_CONTRADICTION,
+    }
+
     def classify(self, claim: str, context: str) -> ClaimResult:
         """Classify the faithfulness of *claim* against *context*.
 
-        The context is split into sentences.  Each sentence is scored
-        against the claim using the NLI model.  The sentence with the
-        highest contradiction score is stored as *evidence* when a
-        contradiction is detected; otherwise the sentence with the highest
-        overall model confidence is used.
+        All context sentences are scored against *claim* in a single
+        batched pipeline call.  The sentence with the highest contradiction
+        score is stored as evidence when a contradiction is detected;
+        otherwise the sentence with the highest model confidence is used.
 
         Args:
             claim: Atomic claim to verify.
@@ -105,35 +112,7 @@ class DeBERTaClassifier(ClassifierContract):
             context contains no sentences.
         """
         sentences = sent_tokenize(context, language=self.language)
-
-        best_contradiction_score = -1.0
-        best_contradiction_sentence: str | None = None
-
-        best_overall_score = -1.0
-        best_overall_sentence: str | None = None
-        best_overall_result: dict[str, Any] | None = None
-
-        for sentence in sentences:
-            result = self.pipeline(
-                {"text": sentence, "text_pair": claim},
-                truncation=True,
-                max_length=512,
-            )
-            # HuggingFace pipeline returns a dict when the input is a dict
-            item: dict[str, Any] = result[0] if isinstance(result, list) else result  # type: ignore[assignment]
-            label = item["label"].lower()
-            score = item["score"]
-
-            if score > best_overall_score:
-                best_overall_score = score
-                best_overall_sentence = sentence
-                best_overall_result = item
-
-            if label == "contradiction" and score > best_contradiction_score:
-                best_contradiction_score = score
-                best_contradiction_sentence = sentence
-
-        if best_overall_result is None:
+        if not sentences:
             return ClaimResult(
                 text=claim,
                 evidence="",
@@ -142,16 +121,85 @@ class DeBERTaClassifier(ClassifierContract):
                 reason=None,
             )
 
-        top_label = best_overall_result["label"].lower()
-        top_score = best_overall_result["score"]
+        pairs = [{"text": s, "text_pair": claim} for s in sentences]
+        raw = self.pipeline(pairs, batch_size=self.batch_size, truncation=True, max_length=512)
+        items: list[dict[str, Any]] = raw if isinstance(raw, list) else [raw]  # type: ignore[assignment]
 
-        label_map = {
-            "entailment": Labels.VALUE_ENTAILMENT,
-            "neutral": Labels.VALUE_NEUTRAL,
-            "contradiction": Labels.VALUE_CONTRADICTION,
-        }
-        mapped_label = label_map[top_label]
+        return self._select_best(claim, sentences, items)
 
+    def classify_batch(self, claims: list[str], context: str) -> list[ClaimResult]:
+        """Classify multiple claims against *context* in a single model call.
+
+        Builds all (sentence, claim) pairs up front and passes them to the
+        pipeline in one batched invocation.  This amortises tokenisation
+        overhead and maximises GPU/MPS utilisation when many claims are
+        present.
+
+        Args:
+            claims: Atomic claim strings to verify.
+            context: Shared full context string for all claims.
+
+        Returns:
+            List of :class:`~cavaquinho.models.ClaimResult` in the same
+            order as *claims*.
+        """
+        if not claims:
+            return []
+
+        sentences = sent_tokenize(context, language=self.language)
+        if not sentences:
+            return [
+                ClaimResult(text=c, evidence="", label=Labels.VALUE_NEUTRAL, score=0.0, reason=None)
+                for c in claims
+            ]
+
+        m = len(sentences)
+        all_pairs = [
+            {"text": s, "text_pair": claim}
+            for claim in claims
+            for s in sentences
+        ]
+        raw = self.pipeline(all_pairs, batch_size=self.batch_size, truncation=True, max_length=512)
+        all_items: list[dict[str, Any]] = raw if isinstance(raw, list) else [raw]  # type: ignore[assignment]
+
+        return [
+            self._select_best(claim, sentences, all_items[i * m: (i + 1) * m])
+            for i, claim in enumerate(claims)
+        ]
+
+    def _select_best(
+        self,
+        claim: str,
+        sentences: list[str],
+        items: list[dict[str, Any]],
+    ) -> ClaimResult:
+        best_contradiction_score = -1.0
+        best_contradiction_sentence: str | None = None
+        best_overall_score = -1.0
+        best_overall_sentence: str | None = None
+        best_overall_item: dict[str, Any] | None = None
+
+        for sentence, item in zip(sentences, items):
+            label = item["label"].lower()
+            score = item["score"]
+
+            if score > best_overall_score:
+                best_overall_score = score
+                best_overall_sentence = sentence
+                best_overall_item = item
+
+            if label == "contradiction" and score > best_contradiction_score:
+                best_contradiction_score = score
+                best_contradiction_sentence = sentence
+
+        if best_overall_item is None:
+            return ClaimResult(
+                text=claim, evidence="", label=Labels.VALUE_NEUTRAL, score=0.0, reason=None
+            )
+
+        top_label = best_overall_item["label"].lower()
+        top_score = best_overall_item["score"]
+        mapped_label = self._LABEL_MAP[top_label]
         evidence = best_contradiction_sentence or best_overall_sentence or ""
         reason = best_contradiction_sentence if mapped_label == Labels.VALUE_CONTRADICTION else None
 

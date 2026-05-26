@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import os
-from concurrent.futures import ThreadPoolExecutor
-
 from .aggregator import Aggregator
 from .classifier.deberta import DeBERTaClassifier
-from .config import DEFAULT_LANGUAGE, DEFAULT_THRESHOLD
+from .config import DEFAULT_LANGUAGE, DEFAULT_THRESHOLD, THRESHOLDS
 from .extractor.rule_extractor import RuleExtractor
 from .models import ValidationResult
 
@@ -74,6 +71,7 @@ class caco:
         response: str,
         context: str,
         prompt: str | None = None,
+        query: str | None = None,
     ) -> ValidationResult:
         """Validate whether *response* is faithful to *context*.
 
@@ -85,12 +83,18 @@ class caco:
             context: Source documents or retrieved passages that the
                 response should be faithful to.
             prompt: Optional original user prompt forwarded to the
-                extractor.  Currently unused by the default extractor.
+                extractor.  Alias for *query*; *query* takes precedence
+                when both are provided.
+            query: Optional original user query.  When provided, short
+                claims (fewer than 5 tokens) are expanded with the query
+                to give the NLI model sufficient context.  Useful for
+                QA tasks where the response is a brief phrase or a
+                single word.
 
         Returns:
             A :class:`~cavaquinho.models.ValidationResult` with the
             aggregated score, hallucination flag, per-claim breakdown,
-            and a human-readable summary.
+            threshold used, and a human-readable summary.
 
         Raises:
             ValueError: If *response* or *context* is empty or
@@ -102,13 +106,9 @@ class caco:
         if not context.strip():
             raise ValueError("Empty context is not usable to infer")
 
-        claims_text = self.extractor.extract(response, context, prompt)
+        effective_prompt = query or prompt
+        claims_text = self.extractor.extract(response, context, effective_prompt)
 
-        max_workers = min(len(claims_text), os.cpu_count() or 4) or 1
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            claim_results = list(executor.map(
-                lambda claim: self.classifier.classify(claim, context),
-                claims_text,
-            ))
+        claim_results = self.classifier.classify_batch(claims_text, context)
 
         return self.aggregator.aggregate(claim_results)

@@ -17,7 +17,7 @@ def _make_validator(claims_out=None, aggregate_out=None):
 
     classifier = MagicMock()
     default_claim = _make_claim()
-    classifier.classify.return_value = claims_out if claims_out is not None else default_claim
+    classifier.classify_batch.side_effect = lambda claims, context: [default_claim] * len(claims)
 
     aggregator = MagicMock()
     aggregator.aggregate.return_value = aggregate_out or ValidationResult(
@@ -47,7 +47,7 @@ class TestCacoInit:
         agg.aggregate.return_value = ValidationResult(
             score=0.0, is_hallucination=False, claims=(), summary=""
         )
-        clf.classify.return_value = _make_claim()
+        clf.classify_batch.return_value = []
         ext.extract.return_value = []
         v = caco(extractor=ext, classifier=clf, aggregator=agg)
         assert v.extractor is ext
@@ -80,18 +80,18 @@ class TestCacoValidate:
         v, ext, clf, agg = _make_validator()
         ext.extract.return_value = ["claim A", "claim B", "claim C"]
         v.validate(response="r", context="c")
-        assert clf.classify.call_count == 3
+        clf.classify_batch.assert_called_once_with(["claim A", "claim B", "claim C"], "c")
 
     def test_classifier_receives_full_context(self):
         v, ext, clf, agg = _make_validator()
         ext.extract.return_value = ["claim"]
         v.validate(response="r", context="the full context string")
-        clf.classify.assert_called_once_with("claim", "the full context string")
+        clf.classify_batch.assert_called_once_with(["claim"], "the full context string")
 
     def test_aggregator_receives_claim_results(self):
         v, ext, clf, agg = _make_validator()
         claim_result = _make_claim(label=Labels.VALUE_CONTRADICTION)
-        clf.classify.return_value = claim_result
+        clf.classify_batch.side_effect = lambda claims, ctx: [claim_result] * len(claims)
         ext.extract.return_value = ["c1", "c2"]
         v.validate(response="r", context="c")
         args, _ = agg.aggregate.call_args
@@ -105,6 +105,7 @@ class TestCacoValidate:
     def test_no_claims_extracted_still_calls_aggregator(self):
         v, ext, clf, agg = _make_validator()
         ext.extract.return_value = []
+        clf.classify_batch.return_value = []
         agg.aggregate.return_value = ValidationResult(
             score=0.0, is_hallucination=False, claims=(), summary="No claims."
         )

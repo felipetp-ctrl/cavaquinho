@@ -70,6 +70,7 @@ class Aggregator:
                 is_hallucination=False,
                 claims=(),
                 summary=self._empty_summary(),
+                threshold=self.threshold,
             )
 
         claim_avg: list[float] = []
@@ -93,6 +94,7 @@ class Aggregator:
             is_hallucination=is_hallucination,
             claims=tuple(claims),
             summary=summary,
+            threshold=self.threshold,
         )
 
     # ------------------------------------------------------------------

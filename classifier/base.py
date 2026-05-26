@@ -42,3 +42,19 @@ class ClassifierContract(ABC):
             as evidence.
         """
         ...
+
+    def classify_batch(self, claims: list[str], context: str) -> list[ClaimResult]:
+        """Classify multiple claims against the same *context* in one call.
+
+        The default implementation calls :meth:`classify` sequentially.
+        Subclasses should override this to exploit hardware batching.
+
+        Args:
+            claims: Atomic claim strings to verify.
+            context: Shared context string for all claims.
+
+        Returns:
+            List of :class:`~cavaquinho.models.ClaimResult` in the same
+            order as *claims*.
+        """
+        return [self.classify(claim, context) for claim in claims]
