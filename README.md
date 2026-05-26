@@ -1,5 +1,7 @@
+<h1 align="center">cavaquinho</h1>
+
 <p align="center">
-  <img src="docs/header.png" alt="cavaquinho — faithfulness hallucination detection for LLM responses" width="100%">
+  <b>Faithfulness hallucination detection for LLM responses</b>
 </p>
 
 <p align="center">
