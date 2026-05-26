@@ -235,7 +235,62 @@ class ValidationResult:
 - **False positives on ambiguous contexts.** When the context contains multiple facts about overlapping subjects (e.g., two different dates for the same entity), the NLI model may classify semantically consistent claims as contradictions.
 - **Python 3.10+.** Tested on Python 3.11 and 3.12. Python 3.14 is functional but produces deprecation warnings from PyTorch (`torch.jit.script` not supported in 3.14+).
 
-## Roadmap
+## Changelog
+
+### v0.2 — Foundation fixes *(current)*
+
+This release addresses correctness issues found in v0.1 and lays the engineering foundation for the confidence and factual verification features planned next.
+
+**Bug fixes**
+
+- **Threshold was silently ignored.** `caco(threshold=0.7)` had no effect — the `Aggregator` always used its own default. The configured threshold is now correctly forwarded. ([`core.py`](cavaquinho/core.py))
+- **Evidence selection returned neutral/0.0 when no contradiction was found.** The classifier only tracked the best contradiction score, so claims with strong entailment evidence were returned as `neutral` with `score=0.0`. The classifier now tracks the best result across all labels and selects the contradiction sentence as evidence only when one exists. ([`classifier/deberta.py`](cavaquinho/classifier/deberta.py))
+- **NLI input used raw `[SEP]` string instead of `text_pair`.** `cross-encoder/nli-deberta-v3-base` expects a `{"text": ..., "text_pair": ...}` dict, not manual string concatenation. This aligns with the canonical HuggingFace cross-encoder API. ([`classifier/deberta.py`](cavaquinho/classifier/deberta.py))
+- **`LLMExtractor` swallowed exceptions silently.** Any failure in the LLM call (bad credentials, network error, unexpected output format) fell back to `RuleExtractor` with no indication something went wrong. The fallback now emits a `logging.WARNING` with the exception type and message. ([`extractor/llm_extractor.py`](cavaquinho/extractor/llm_extractor.py))
+- **`ValidationResult.claims` was a mutable list inside a frozen dataclass.** Consumers could mutate the list without error. The field is now `tuple[ClaimResult, ...]`, consistent with the immutability guarantee. ([`models.py`](cavaquinho/models.py))
+- **`reason` field in the summary repeated the label string.** The summary now surfaces the actual contradicting evidence sentence, making the output actionable. ([`aggregator.py`](cavaquinho/aggregator.py))
+
+**Improvements**
+
+- **Apple Silicon (MPS) support.** `DeBERTaClassifier` now detects `torch.backends.mps.is_available()` and uses `"mps"` as device automatically, after CUDA and before CPU. ([`classifier/deberta.py`](cavaquinho/classifier/deberta.py))
+- **`ThreadPoolExecutor` worker count is now bounded.** Previously used an unbounded pool (one thread per claim), which could degrade performance via thread overhead on long responses. The pool is now capped at `min(n_claims, cpu_count)`. ([`core.py`](cavaquinho/core.py))
+- **`torch` is now an optional dependency.** Install the default package for custom classifiers or the `[nli]` extra for local DeBERTa inference. This avoids the ~2 GB `torch` download for users who provide their own classifier. ([`pyproject.toml`](pyproject.toml))
+- **`max_claims` default increased from 10 to 20.** Truncating at 10 could silently under-report contradictions in longer responses.
+- **Typo corrected in `LLMExtractor` prompt example.** "Spiders has 8 legs" → "Spiders have 8 legs."
+
+**Installation change**
+
+```bash
+# Default install — no torch required
+pip install cavaquinho
+
+# With local DeBERTa classifier (adds transformers + torch)
+pip install "cavaquinho[nli]"
+```
+
+---
+
+### Model benchmark — ASSIN2 Portuguese NLI
+
+We evaluated both models on the ASSIN2 validation split (500 sentence pairs, balanced 50/50 entailment/none). ASSIN2 is the standard Brazilian Portuguese NLI benchmark. Because it has no contradiction class, we measure binary performance: entailment detection vs. non-entailment.
+
+| Model | Accuracy | F1-entailment | F1-none | ms/sample |
+|-------|----------|---------------|---------|-----------|
+| Majority baseline | 0.500 | 0.667 | 0.000 | — |
+| `cross-encoder/nli-deberta-v3-base` *(current default)* | **0.882** | **0.885** | **0.879** | 29.5 |
+| `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli` | 0.876 | 0.884 | 0.866 | 28.9 |
+
+**Reading the results:**
+
+Both models reach 88% accuracy on Portuguese — substantially above the 50% baseline. The English-centric DeBERTa cross-encoder edges out the multilingual mDeBERTa in F1-none (correctly flagging non-entailments), which is the more critical axis for hallucination detection as a guardrail.
+
+The mDeBERTa model has higher recall on entailment (237/250 vs 226/250) but more false positives — it over-predicts entailment. For faithfulness detection, where the cost of a missed hallucination exceeds the cost of a false alarm, the current default model has a slight edge.
+
+**Conclusion:** `cross-encoder/nli-deberta-v3-base` is retained as the default. The gap is small enough that replacing it with a purpose-trained Portuguese model remains worth investigating if a 3-class Portuguese NLI dataset with contradiction labels becomes available (ASSIN2 does not include that class).
+
+Hardware: Apple M-series (MPS). ASSIN2 validation split, seed=42.
+
+---
 
 ### v0.1 — Faithfulness ✅
 - Claim extraction via NLTK (no external dependencies)
@@ -245,11 +300,17 @@ class ValidationResult:
 - Pluggable extractor and classifier interfaces
 - LLMExtractor for LLM-based claim decomposition
 
-### v0.2 — Confidence
+---
+
+## Roadmap
+
+### v0.2 — Foundation fixes ✅ *(see changelog above)*
+
+### v0.3 — Confidence
 - Self-consistency detection via response sampling
 - Consistency scoring across multiple sampled outputs
 
-### v0.3 — Factual
+### v0.4 — Factual
 - Optional external search integration (Tavily, Wikipedia API)
 - Factual verification without a pre-supplied context
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cavaquinho"
-version = "0.1.0"
+version = "0.2.0"
 description = "A lightweight Python library for hallucination detection and explainability in LLM responses, with claim-level faithfulness verification."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,19 +30,25 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "transformers>=4.40.0",
-    "torch>=2.0.0",
     "nltk>=3.8.0",
 ]
 
 [project.optional-dependencies]
+nli = [
+    "transformers>=4.40.0",
+    "torch>=2.0.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov",
+    "pytest-mock",
+    "transformers>=4.40.0",
+    "torch>=2.0.0",
 ]
 rag = [
     "langchain-core>=1.0.0",
@@ -52,9 +58,9 @@ rag = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/felipetomepereira/cavaquinho"
-Repository = "https://github.com/felipetomepereira/cavaquinho"
-Issues = "https://github.com/felipetomepereira/cavaquinho"
+Homepage = "https://github.com/felipetp-ctrl/cavaquinho"
+Repository = "https://github.com/felipetp-ctrl/cavaquinho"
+Issues = "https://github.com/felipetp-ctrl/cavaquinho/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -63,6 +69,20 @@ include = ["cavaquinho*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.coverage.run]
+source = ["cavaquinho"]
+omit = [
+    "benchmarks/*",
+    "cavaquinho/classifier/deberta.py",  # requires live model — covered by integration tests
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.\\s*$",
+]
 
 [tool.pyright]
 pythonVersion = "3.11"
