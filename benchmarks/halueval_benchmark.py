@@ -50,6 +50,7 @@ def _load_qa(n: int) -> list[dict]:
             "context": row["knowledge"],  # type: ignore[index]
             "response": row["answer"],  # type: ignore[index]
             "gold": row["hallucination"],  # type: ignore[index]  # "yes" | "no"
+            "query": row.get("question"),  # type: ignore[index]
         }
         for row in ds
     ]
@@ -93,7 +94,11 @@ class SubsetResult:
 
 def _run_sample(validator: caco.caco, sample: dict) -> tuple[str, float]:
     t0 = time.perf_counter()
-    result = validator.validate(response=sample["response"], context=sample["context"])
+    result = validator.validate(
+        response=sample["response"],
+        context=sample["context"],
+        query=sample.get("query"),
+    )
     elapsed_ms = (time.perf_counter() - t0) * 1000
     prediction = "yes" if result.is_hallucination else "no"
     return prediction, elapsed_ms
@@ -182,7 +187,11 @@ def _collect_scores(
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {
             pool.submit(
-                lambda s: validator.validate(response=s["response"], context=s["context"]).score,
+                lambda s: validator.validate(
+                    response=s["response"],
+                    context=s["context"],
+                    query=s.get("query"),
+                ).score,
                 sample,
             ): sample
             for sample in samples

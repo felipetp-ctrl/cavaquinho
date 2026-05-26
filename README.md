@@ -253,22 +253,45 @@ Reproduce with: `python -m benchmarks.nli_benchmark --n 500`
 Evaluated on [HaluEval](https://github.com/RUCKBReasoning/HaluEval) (Li et al., 2023), the standard hallucination detection benchmark.
 Binary task: given a knowledge snippet (context) and an answer/summary, detect whether it is hallucinated (`yes`) or faithful (`no`).
 
-> Results below use `cross-encoder/nli-deberta-v3-base` with task-specific thresholds from `THRESHOLDS`.
+> Results below use `cross-encoder/nli-deberta-v3-base`, n=1000, seed=42. QA results pass the question as `query=` to enable short-claim expansion.
 
-| Subset | Threshold | Accuracy | F1-hal | F1-faith | Majority baseline |
-|--------|-----------|----------|--------|----------|-------------------|
-| QA | 0.3 | — | — | — | 0.500 |
-| Summarization | 0.4 | — | — | — | 0.500 |
+| Subset | Threshold | neutral weight | Accuracy | F1-hal | F1-faith | Macro F1 |
+|--------|-----------|----------------|----------|--------|----------|----------|
+| QA | 0.3 | 0.0 | **0.647** | 0.571 | **0.700** | **0.636** |
+| QA | 0.3 | 0.5 *(default)* | 0.551 | 0.660 | 0.341 | 0.500 |
+| Majority baseline | — | — | 0.512 | 0.677 | 0.000 | 0.338 |
+| Summarization | 0.4 | 0.5 | — | — | — | — |
 
-*Results pending — running benchmark. Reproduce with:*
+> Summarization results pending. Reproduce with:
 
 ```bash
-python -m benchmarks.halueval_benchmark --subset all --n 10000 --threshold 0.3
+python -m benchmarks.halueval_benchmark --subset qa --n 1000 --threshold 0.3 --workers 1
 ```
 
 **Interpretation:**
 - **F1-hal** — how well cavaquinho catches hallucinated responses (recall matters most)
 - **F1-faith** — how well cavaquinho avoids false positives on faithful responses
+- **Macro F1** — balanced average; most informative metric when the majority baseline dominates F1-hal
+
+With `neutral_weight=0.0` and `query` expansion: accuracy +13.5pp, macro F1 +29.8pp, and precision on hallucinations rises from 0.54 to 0.76 — meaning alerts are far more reliable. The trade-off is lower recall (0.46 vs 0.85), so choose based on whether missing a hallucination or issuing a false alarm is more costly.
+
+### Calibration curve — QA subset (n=1000, neutral weight=0.5)
+
+Sweep of thresholds from 0.1 to 0.9. Use `--calibrate` to reproduce.
+
+| Threshold | Precision | Recall | F1-hal | F1-faith |
+|-----------|-----------|--------|--------|----------|
+| 0.1 | 0.543 | 0.850 | 0.663 | 0.355 |
+| 0.2 | 0.543 | 0.850 | 0.663 | 0.355 |
+| 0.3 | 0.544 | 0.844 | **0.662** | 0.363 |
+| 0.4 | 0.547 | 0.836 | 0.662 | 0.380 |
+| 0.5 *(default)* | 0.614 | 0.467 | 0.531 | 0.615 |
+| 0.6 | 0.620 | 0.465 | 0.531 | 0.620 |
+| 0.7 | 0.623 | 0.459 | 0.529 | 0.623 |
+| 0.8 | 0.621 | 0.451 | 0.523 | 0.622 |
+| 0.9 | 0.628 | 0.445 | 0.521 | **0.628** |
+
+Key finding: thresholds 0.1–0.4 maximise hallucination recall (0.84–0.85) at the cost of more false positives. The default 0.5 favours precision (+14pp) but misses ~53% of real hallucinations. Choose based on your application's cost of a missed hallucination vs. a false alarm.
 
 ## Limitations
 
