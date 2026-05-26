@@ -45,9 +45,9 @@ def load_assin2(n: int) -> list[dict]:
     ds = ds.shuffle(seed=42).select(range(min(n, len(ds))))
     return [
         {
-            "premise": row["premise"],
-            "hypothesis": row["hypothesis"],
-            "gold_binary": ASSIN2_INT_TO_STR[row["entailment_judgment"]],
+            "premise": row["premise"],  # type: ignore[index]
+            "hypothesis": row["hypothesis"],  # type: ignore[index]
+            "gold_binary": ASSIN2_INT_TO_STR[row["entailment_judgment"]],  # type: ignore[index]
         }
         for row in ds
     ]

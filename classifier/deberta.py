@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 from nltk.tokenize import sent_tokenize
 from transformers import pipeline
@@ -109,7 +111,7 @@ class DeBERTaClassifier(ClassifierContract):
 
         best_overall_score = -1.0
         best_overall_sentence: str | None = None
-        best_overall_result: list | None = None
+        best_overall_result: dict[str, Any] | None = None
 
         for sentence in sentences:
             result = self.pipeline(
@@ -117,8 +119,8 @@ class DeBERTaClassifier(ClassifierContract):
                 truncation=True,
                 max_length=512,
             )
-            # pipeline returns a dict for dict input, list for list input
-            item = result[0] if isinstance(result, list) else result
+            # HuggingFace pipeline returns a dict when the input is a dict
+            item: dict[str, Any] = result[0] if isinstance(result, list) else result  # type: ignore[assignment]
             label = item["label"].lower()
             score = item["score"]
 
