@@ -179,7 +179,7 @@ Three components run in sequence:
 
 **1. Claim extraction.** The response is split into atomic sentences using NLTK. Each sentence is treated as an independent, verifiable assertion. An `LLMExtractor` is available for higher-precision decomposition when a language model client is available.
 
-**2. NLI classification.** For each claim, the context is split into sentences and the claim is compared against each one using a fine-tuned DeBERTa NLI model (`cross-encoder/nli-deberta-v3-base`). The sentence with the highest contradiction score is used as the `evidence` field. Classification runs concurrently across all claims via `ThreadPoolExecutor`.
+**2. NLI classification.** For each claim, the context is split into sentences and the claim is compared against each one using a fine-tuned DeBERTa NLI model (`cross-encoder/nli-deberta-v3-base`). The sentence with the highest contradiction score is used as the `evidence` field. All (sentence, claim) pairs across all claims are batched into a single model call via `classify_batch()`, maximising GPU/MPS throughput.
 
 **3. Weighted aggregation.** Scores are combined using label-weighted averaging. Contradiction labels carry full weight (1.0), neutral labels carry partial weight (0.5), and entailment labels carry no weight (0.0). The aggregated score is compared against a configurable threshold to produce the final `is_hallucination` decision.
 
@@ -233,6 +233,7 @@ class ValidationResult:
     is_hallucination: bool          # score > threshold
     claims: tuple[ClaimResult, ...] # per-claim breakdown (immutable)
     summary: str                    # natural language description of the result
+    threshold: float                # decision threshold used (default 0.5)
 ```
 
 ## Benchmark — ASSIN2 Portuguese NLI
@@ -247,6 +248,28 @@ Evaluated on the ASSIN2 Brazilian Portuguese validation split (500 sentence pair
 
 Reproduce with: `python -m benchmarks.nli_benchmark --n 500`
 
+## Benchmark — HaluEval Hallucination Detection
+
+Evaluated on [HaluEval](https://github.com/RUCKBReasoning/HaluEval) (Li et al., 2023), the standard hallucination detection benchmark.
+Binary task: given a knowledge snippet (context) and an answer/summary, detect whether it is hallucinated (`yes`) or faithful (`no`).
+
+> Results below use `cross-encoder/nli-deberta-v3-base` with task-specific thresholds from `THRESHOLDS`.
+
+| Subset | Threshold | Accuracy | F1-hal | F1-faith | Majority baseline |
+|--------|-----------|----------|--------|----------|-------------------|
+| QA | 0.3 | — | — | — | 0.500 |
+| Summarization | 0.4 | — | — | — | 0.500 |
+
+*Results pending — running benchmark. Reproduce with:*
+
+```bash
+python -m benchmarks.halueval_benchmark --subset all --n 10000 --threshold 0.3
+```
+
+**Interpretation:**
+- **F1-hal** — how well cavaquinho catches hallucinated responses (recall matters most)
+- **F1-faith** — how well cavaquinho avoids false positives on faithful responses
+
 ## Limitations
 
 - **Faithfulness scope.** Cavaquinho verifies whether the response contradicts the provided context. It does not verify factual accuracy against external knowledge — that requires a separate retrieval or knowledge-base step.
@@ -256,16 +279,23 @@ Reproduce with: `python -m benchmarks.nli_benchmark --n 500`
 
 ## Roadmap
 
-### v0.2 — Foundation fixes ✅
-See [CHANGELOG.md](CHANGELOG.md) for the full list of changes.
+### v0.2 — Foundation ✅
+Pipeline estável, 65 testes unitários, 92.8% cobertura, CI/CD, benchmark ASSIN2-PT, publicação no PyPI.
 
-### v0.3 — Confidence
-- Self-consistency detection via response sampling
-- Consistency scoring across multiple sampled outputs
+### v0.3 — Calibration ✅
+- `THRESHOLDS` dict por task type (`qa=0.3`, `summarization=0.4`, `default=0.5`)
+- `query` param em `validate()` — expande claims curtos (<5 tokens) com contexto da pergunta
+- `ValidationResult.threshold` exposto no resultado
+- HaluEval benchmark integrado (`--subset`, `--n`, `--calibrate`)
+- Batching NLI: todos os pares (sentença × claim) em uma única chamada ao modelo
 
 ### v0.4 — Factual
-- Optional external search integration (Tavily, Wikipedia API)
-- Factual verification without a pre-supplied context
+- Verificação factual com busca externa (Tavily, Wikipedia API)
+- Detecção sem contexto pré-fornecido
+
+### v0.5 — Self-consistency
+- Detecção via response sampling
+- Score de consistência entre múltiplas saídas amostradas
 
 ## Contributing
 
