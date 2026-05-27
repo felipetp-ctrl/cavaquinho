@@ -1,10 +1,12 @@
 """Unit tests for cavaquinho extractors."""
 
 import json
-import pytest
 from unittest.mock import MagicMock
-from cavaquinho.extractor.rule_extractor import RuleExtractor
+
+import pytest
+
 from cavaquinho.extractor.llm_extractor import LLMExtractor
+from cavaquinho.extractor.rule_extractor import RuleExtractor
 
 
 class TestRuleExtractor:
@@ -131,3 +133,32 @@ class TestLLMExtractor:
     def test_default_max_claims_is_20(self):
         ex = LLMExtractor(llm_fn=lambda p: "[]")
         assert ex.max_claims == 20
+
+
+class TestDocumentedLimitations:
+    """Regression tests that pin known limitations so they cannot silently break."""
+
+    def test_implicit_negation_is_kept_as_single_claim(self):
+        # RuleExtractor splits on sentence boundaries, not semantic negation.
+        # "The LGPD was not enacted in 2015." must be kept whole, not split.
+        ex = RuleExtractor()
+        result = ex.extract("The LGPD was not enacted in 2015.")
+        assert len(result) == 1
+        assert "not" in result[0]
+
+    def test_empty_context_does_not_affect_extraction(self):
+        # Extraction is context-independent; empty context must not raise.
+        ex = RuleExtractor()
+        result = ex.extract("The sky is blue.", context="")
+        assert result == ["The sky is blue."]
+
+    def test_response_with_no_verifiable_claims_returns_list(self):
+        # Even a response that is purely opinion must return a list (possibly empty).
+        ex = RuleExtractor()
+        result = ex.extract("I think this is nice.")
+        assert isinstance(result, list)
+
+    def test_llm_extractor_empty_response_returns_empty_list(self):
+        ex = LLMExtractor(llm_fn=lambda p: "[]")
+        result = ex.extract("  ")
+        assert result == []

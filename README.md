@@ -298,7 +298,25 @@ class ValidationResult:
     summary: str                    # natural language description of the result
 ```
 
-## Benchmark — ASSIN2 Portuguese NLI
+## Benchmarks
+
+### Faithfulness — HaluEval QA (English)
+
+Evaluated on [HaluEval QA](https://github.com/RUCAIBox/HaluEval) (Zhang et al., 2023).
+Each sample produces two response/context pairs: one hallucinated, one faithful.
+Full pipeline: `RuleExtractor → DeBERTaClassifier → Aggregator` (threshold 0.5).
+
+> **Results pending first run.** Run the benchmark locally and the table below will be populated.
+
+| Model | Accuracy | Precision | Recall | F1 | FNR |
+|-------|----------|-----------|--------|----|-----|
+| `cross-encoder/nli-deberta-v3-base` *(default)* | — | — | — | — | — |
+
+Reproduce with: `python -m benchmarks.faithfulness_benchmark --n 500 --save results/faithfulness.json`
+
+See [`docs/evaluation.md`](docs/evaluation.md) for methodology, metric definitions, and known limitations.
+
+### NLI Component — ASSIN2 Portuguese
 
 Evaluated on the ASSIN2 Brazilian Portuguese validation split (500 sentence pairs, balanced). Binary task: entailment detection vs. non-entailment.
 

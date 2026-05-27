@@ -27,6 +27,9 @@ jobs:
       - name: Install package and dev dependencies
         run: pip install -e ".[dev]"
 
+      - name: Lint with ruff
+        run: ruff check cavaquinho/ tests/
+
       - name: Run unit tests with coverage
         run: |
           pytest tests/unit/ -v \

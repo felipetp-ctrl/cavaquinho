@@ -1,8 +1,9 @@
 """Unit tests for cavaquinho.aggregator.Aggregator."""
 
 import pytest
+
 from cavaquinho.aggregator import Aggregator
-from cavaquinho.models import ClaimResult, Labels, ValidationResult
+from cavaquinho.models import ClaimResult, Labels
 
 
 def make_claim(label: Labels, score: float = 0.9, reason: str | None = None) -> ClaimResult:
@@ -169,3 +170,56 @@ class TestAggregateSummary:
         result = Aggregator().aggregate([low, high])
         assert "high claim" in result.summary
         assert "low claim" not in result.summary
+
+
+class TestAggregateDocumentedLimitations:
+    """Tests that pin the documented scoring semantics so they cannot silently change."""
+
+    def test_single_contradiction_in_ten_claims_is_diluted(self):
+        # Documented behaviour: score is a mean over all claims, so 1 contradiction
+        # in 10 claims yields a proportionally low score (0.09 with score=0.9).
+        # Callers that need to catch ANY contradiction must inspect result.claims.
+        claims = [make_claim(Labels.VALUE_ENTAILMENT, score=0.99)] * 9
+        claims.append(make_claim(Labels.VALUE_CONTRADICTION, score=0.9))
+        result = Aggregator(threshold=0.5).aggregate(claims)
+        assert result.score < 0.5
+        assert result.is_hallucination is False
+        # But the contradiction is still visible in claims
+        contradictions = [c for c in result.claims if c.label == Labels.VALUE_CONTRADICTION]
+        assert len(contradictions) == 1
+
+    def test_all_contradictions_always_flags_hallucination(self):
+        claims = [make_claim(Labels.VALUE_CONTRADICTION, score=0.9) for _ in range(5)]
+        result = Aggregator(threshold=0.5).aggregate(claims)
+        assert result.is_hallucination is True
+
+    def test_threshold_at_exact_score_does_not_flag(self):
+        # is_hallucination is True only when score *exceeds* threshold (strict >)
+        claims = [make_claim(Labels.VALUE_CONTRADICTION, score=0.5)]
+        result = Aggregator(threshold=0.5).aggregate(claims)
+        assert result.score == 0.5
+        assert result.is_hallucination is False  # 0.5 is not > 0.5
+
+    def test_neutral_claim_contributes_half(self):
+        # Neutral weight=0.5 is documented; pin it here so weight changes are caught.
+        claims = [make_claim(Labels.VALUE_NEUTRAL, score=1.0)]
+        result = Aggregator().aggregate(claims)
+        assert result.score == 0.5
+
+    def test_custom_weights_override_defaults(self):
+        weights = {
+            Labels.VALUE_CONTRADICTION: 0.8,
+            Labels.VALUE_NEUTRAL: 0.1,
+            Labels.VALUE_ENTAILMENT: 0.0,
+        }
+        claims = [make_claim(Labels.VALUE_CONTRADICTION, score=1.0)]
+        result = Aggregator(weights=weights).aggregate(claims)
+        assert result.score == 0.8
+
+    def test_unknown_label_treated_as_zero_weight(self):
+        # weights.get(label, 0.0) — unknown labels contribute 0
+        from unittest.mock import MagicMock
+        fake_label = MagicMock()
+        claim = ClaimResult(text="t", evidence="e", label=fake_label, score=0.9)
+        result = Aggregator().aggregate([claim])
+        assert result.score == 0.0

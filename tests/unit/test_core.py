@@ -1,8 +1,10 @@
-"""Unit tests for cavaquinho.core.caco — all model calls are mocked."""
+"""Unit tests for cavaquinho.core.Validator — all model calls are mocked."""
+
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
-from cavaquinho.core import caco
+
+from cavaquinho.core import Caco, Validator
 from cavaquinho.models import ClaimResult, Labels, ValidationResult
 
 
@@ -11,7 +13,7 @@ def _make_claim(label=Labels.VALUE_ENTAILMENT, score=0.9, text="claim", reason=N
 
 
 def _make_validator(claims_out=None, aggregate_out=None):
-    """Build a caco instance with fully mocked extractor, classifier, and aggregator."""
+    """Build a Validator instance with fully mocked extractor, classifier, and aggregator."""
     extractor = MagicMock()
     extractor.extract.return_value = ["claim one", "claim two"]
 
@@ -28,16 +30,16 @@ def _make_validator(claims_out=None, aggregate_out=None):
         summary="ok",
     )
 
-    validator = caco(extractor=extractor, classifier=classifier, aggregator=aggregator)
+    validator = Validator(extractor=extractor, classifier=classifier, aggregator=aggregator)
     return validator, extractor, classifier, aggregator
 
 
-class TestCacoInit:
+class TestValidatorInit:
     def test_defaults_are_set(self):
         with patch("cavaquinho.core.DeBERTaClassifier"), \
              patch("cavaquinho.core.RuleExtractor"), \
              patch("cavaquinho.core.Aggregator") as MockAgg:
-            validator = caco(threshold=0.7, language="portuguese")
+            validator = Validator(threshold=0.7, language="portuguese")
             assert validator.threshold == 0.7
             assert validator.language == "portuguese"
             # threshold must be forwarded to Aggregator
@@ -50,13 +52,13 @@ class TestCacoInit:
         )
         clf.classify.return_value = _make_claim()
         ext.extract.return_value = []
-        v = caco(extractor=ext, classifier=clf, aggregator=agg)
+        v = Validator(extractor=ext, classifier=clf, aggregator=agg)
         assert v.extractor is ext
         assert v.classifier is clf
         assert v.aggregator is agg
 
 
-class TestCacoValidate:
+class TestValidatorValidate:
     def test_empty_response_raises(self):
         v, *_ = _make_validator()
         with pytest.raises(ValueError, match="Empty response"):
@@ -118,7 +120,7 @@ class TestCacoValidate:
         assert result.claims == ()
 
 
-class TestCacoValidateBatch:
+class TestValidatorValidateBatch:
     def test_returns_list_of_results(self):
         v, *_ = _make_validator()
         results = v.validate_batch(responses=["r1", "r2"], context="ctx")
@@ -144,7 +146,7 @@ class TestCacoValidateBatch:
             v.validate_batch(responses=["r1", "r2"], context="ctx", contexts=["only one"])
 
 
-class TestCacoRepr:
+class TestValidatorRepr:
     def test_repr_contains_threshold_and_classifier(self):
         v, *_ = _make_validator()
         r = repr(v)
@@ -152,9 +154,9 @@ class TestCacoRepr:
         assert "threshold=" in r
 
 
-class TestCacoThresholdPropagation:
+class TestValidatorThresholdPropagation:
     def test_threshold_forwarded_to_aggregator_constructor(self):
-        """Regression test: threshold configured on caco must reach the Aggregator."""
+        """Regression: threshold configured on Validator must reach the Aggregator."""
         with patch("cavaquinho.core.DeBERTaClassifier"), \
              patch("cavaquinho.core.RuleExtractor"), \
              patch("cavaquinho.core.Aggregator") as MockAgg:
@@ -162,6 +164,32 @@ class TestCacoThresholdPropagation:
             MockAgg.return_value.aggregate.return_value = ValidationResult(
                 score=0.0, is_hallucination=False, claims=(), summary=""
             )
-            caco(threshold=0.9)
+            Validator(threshold=0.9)
             _, kwargs = MockAgg.call_args
             assert kwargs.get("threshold") == 0.9
+
+
+class TestCacoAlias:
+    def test_caco_is_deprecated_alias(self):
+        """caco must still be importable but emit DeprecationWarning."""
+        import warnings
+
+        import cavaquinho
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            cls = cavaquinho.caco
+            assert cls is Validator
+            assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
+
+    def test_caco_from_core_is_deprecated(self):
+        import warnings
+
+        import cavaquinho.core as core_mod
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            cls = core_mod.caco
+            assert cls is Validator
+            assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
+
+    def test_caco_alias_equals_validator(self):
+        assert Caco is Validator

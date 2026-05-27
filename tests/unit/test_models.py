@@ -1,6 +1,7 @@
 """Unit tests for cavaquinho.models."""
 
 import pytest
+
 from cavaquinho.models import ClaimResult, Labels, ValidationResult
 
 
