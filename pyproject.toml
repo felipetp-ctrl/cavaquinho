@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cavaquinho"
-version = "0.2.2"
+version = "0.2.4"
 description = "A lightweight Python library for hallucination detection and explainability in LLM responses, with claim-level faithfulness verification."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -55,6 +55,9 @@ rag = [
     "faiss-cpu>=1.7.0",
     "sentence-transformers>=2.0.0",
 ]
+
+[project.scripts]
+cavaquinho = "cavaquinho._cli:main"
 
 [project.urls]
 Homepage = "https://github.com/felipetp-ctrl/cavaquinho"

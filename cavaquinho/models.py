@@ -27,6 +27,7 @@ class ClaimResult:
             confidence regardless of label.
         label: NLI label assigned by the classifier.
         score: Model confidence for the assigned label, in [0.0, 1.0].
+            Rounded to 4 decimal places.
         reason: The contradicting evidence sentence when *label* is
             ``VALUE_CONTRADICTION``; ``None`` otherwise.
     """
@@ -36,6 +37,10 @@ class ClaimResult:
     label: Labels
     score: float
     reason: str | None = None
+
+    def __repr__(self) -> str:
+        text = self.text if len(self.text) <= 60 else self.text[:57] + "..."
+        return f"ClaimResult(label={self.label.value.upper()}, score={self.score}, text={text!r})"
 
 
 @dataclass(frozen=True)
@@ -56,3 +61,10 @@ class ValidationResult:
     is_hallucination: bool
     claims: tuple[ClaimResult, ...]
     summary: str
+
+    def __repr__(self) -> str:
+        flag = "HALLUCINATION" if self.is_hallucination else "OK"
+        return f"ValidationResult(score={self.score}, {flag}, claims={len(self.claims)})"
+
+    def __str__(self) -> str:
+        return self.summary

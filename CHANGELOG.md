@@ -6,6 +6,59 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.2.4] — 2026-05-26
+
+### Added
+- **CLI** — `cavaquinho validate` command for one-off validation from the terminal or CI pipelines. `--response`/`--response-file`, `--context`/`--context-file` (accepts `-` for stdin), `--json`, `--threshold`, `--language`. Exit codes: `0` = ok, `1` = hallucination, `2` = error.
+- **`Validator` class** — PascalCase name for `caco`. `caco` preserved as backwards-compatible alias.
+- **`validate_batch()`** — validate multiple responses against a shared or per-response context in one call.
+- **`classify_batch()`** on `DeBERTaClassifier` — all (sentence, claim) pairs submitted in a single batched pipeline call, maximising GPU/MPS throughput.
+- **`preload()`** on `Validator` — no-op warm-up hook for explicit server initialisation.
+- **`__version__`** exported from `cavaquinho`.
+- **`__repr__`** on `ClaimResult` and `ValidationResult` — compact single-line output for REPL use.
+- **`__str__`** on `ValidationResult` — returns `result.summary`.
+- **`MiniCheckClassifier.neutral_band`** — maps borderline P(supported) scores to `VALUE_NEUTRAL`. Default: `(0.4, 0.6)`.
+- Subpackage re-exports: `from cavaquinho.extractor import LLMExtractor` and `from cavaquinho.classifier import DeBERTaClassifier` now work as documented.
+
+### Fixed
+- **`DeBERTaClassifier` label selection** — a high-confidence `neutral` score from one context sentence could previously suppress a lower-score `contradiction` from another. Now any detected contradiction wins.
+- **`LLMExtractor` JSON parser** — fence stripping now handles ` ```json`, ` ```python`, leading spaces, and other fence variants that caused `JSONDecodeError`.
+
+### Changed
+- `Validator.validate()` uses `classify_batch()` instead of `ThreadPoolExecutor` + `classify()`. Faster on GPU/MPS; no thread overhead on CPU.
+
+---
+
+## [0.2.3] — 2026-05-26
+
+### Added
+- `Validator` class (PascalCase) with `caco` alias.
+- `preload()` on `Validator`.
+- Subpackage re-exports for `extractor` and `classifier`.
+
+### Fixed
+- `score=1.0` example in README corrected to `score=0.9998`.
+
+### Changed
+- README: "Detection limits and sensitivity" section with threshold tuning guide.
+- All README examples updated to `from cavaquinho import Validator`.
+
+---
+
+## [0.2.2] — 2026-05-25
+
+### Fixed
+- Empty wheel on PyPI — source files moved into `cavaquinho/` package directory.
+
+---
+
+## [0.2.1] — 2026-05-20
+
+### Changed
+- Version bump to publish updated README to PyPI.
+
+---
+
 ## [0.2.0] — 2026-05-25
 
 ### Fixed

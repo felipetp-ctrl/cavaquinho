@@ -44,6 +44,7 @@ class MiniCheckClassifier(ClassifierContract):
         model_name: str = "flan-t5-large",
         device: str | None = None,
         batch_size: int = 16,
+        neutral_band: tuple[float, float] = (0.4, 0.6),
     ) -> None:
         if model_name not in _MINICHECK_MODELS:
             raise ValueError(
@@ -63,12 +64,13 @@ class MiniCheckClassifier(ClassifierContract):
             kwargs["device"] = device
         self._scorer = MiniCheck(**kwargs)
         self.batch_size = batch_size
+        self.neutral_band = neutral_band
 
     def classify(self, claim: str, context: str) -> ClaimResult:
         pred_labels, raw_probs, _, _ = self._scorer.score(
             docs=[context], claims=[claim]
         )
-        return self._make_result(claim, context, pred_labels[0], raw_probs[0])
+        return self._make_result(claim, context, raw_probs[0])
 
     def classify_batch(self, claims: list[str], context: str) -> list[ClaimResult]:
         if not claims:
@@ -78,30 +80,34 @@ class MiniCheckClassifier(ClassifierContract):
             docs=docs, claims=claims
         )
         return [
-            self._make_result(claim, context, pred, prob)
-            for claim, pred, prob in zip(claims, pred_labels, raw_probs)
+            self._make_result(claim, context, prob)
+            for claim, prob in zip(claims, raw_probs)
         ]
 
-    @staticmethod
-    def _make_result(
-        claim: str,
-        context: str,
-        pred_label: int,
-        raw_prob: float,
-    ) -> ClaimResult:
-        # MiniCheck raw_prob = P(supported). pred_label: 1=supported, 0=hallucinated.
-        if pred_label == 0:
-            label = Labels.VALUE_CONTRADICTION
-            score = round(1.0 - raw_prob, 4)
-            reason = context
-        else:
-            label = Labels.VALUE_ENTAILMENT
-            score = round(raw_prob, 4)
-            reason = None
+    def _make_result(self, claim: str, context: str, raw_prob: float) -> ClaimResult:
+        """Map MiniCheck P(supported) to a ClaimResult.
+
+        *raw_prob* is P(supported). Values inside *neutral_band* are mapped to
+        NEUTRAL so that borderline predictions don't receive a hard binary score.
+        """
+        lo, hi = self.neutral_band
+        if raw_prob < lo:
+            return ClaimResult(
+                text=claim, evidence=context,
+                label=Labels.VALUE_CONTRADICTION,
+                score=round(1.0 - raw_prob, 4),
+                reason=context,
+            )
+        if raw_prob > hi:
+            return ClaimResult(
+                text=claim, evidence=context,
+                label=Labels.VALUE_ENTAILMENT,
+                score=round(raw_prob, 4),
+                reason=None,
+            )
         return ClaimResult(
-            text=claim,
-            evidence=context,
-            label=label,
-            score=score,
-            reason=reason,
+            text=claim, evidence=context,
+            label=Labels.VALUE_NEUTRAL,
+            score=round(raw_prob, 4),
+            reason=None,
         )

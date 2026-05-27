@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Callable
 
 from .base import ExtractorContract
@@ -113,9 +114,8 @@ Text:
             json.JSONDecodeError: If the output cannot be parsed as JSON.
         """
         cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.splitlines()
-            cleaned = "\n".join(lines[1:-1]).strip()
+        cleaned = re.sub(r"^\s*```[a-zA-Z]*\s*\n?", "", cleaned)
+        cleaned = re.sub(r"\n?\s*```\s*$", "", cleaned).strip()
 
         parsed = json.loads(cleaned)
 

@@ -56,3 +56,8 @@ pyrightconfig.json
 # Env files
 .env
 .env.*
+
+# benchmark artifacts
+scaling_benchmark.png
+benchmarks/*.png
+benchmarks/*.csv

@@ -18,6 +18,7 @@ def _make_validator(claims_out=None, aggregate_out=None):
     classifier = MagicMock()
     default_claim = _make_claim()
     classifier.classify.return_value = claims_out if claims_out is not None else default_claim
+    classifier.classify_batch.return_value = [default_claim, default_claim]
 
     aggregator = MagicMock()
     aggregator.aggregate.return_value = aggregate_out or ValidationResult(
@@ -78,20 +79,23 @@ class TestCacoValidate:
 
     def test_classifier_called_for_each_claim(self):
         v, ext, clf, agg = _make_validator()
-        ext.extract.return_value = ["claim A", "claim B", "claim C"]
+        claims = ["claim A", "claim B", "claim C"]
+        ext.extract.return_value = claims
+        clf.classify_batch.return_value = [_make_claim()] * 3
         v.validate(response="r", context="c")
-        assert clf.classify.call_count == 3
+        clf.classify_batch.assert_called_once_with(claims, "c")
 
     def test_classifier_receives_full_context(self):
         v, ext, clf, agg = _make_validator()
         ext.extract.return_value = ["claim"]
+        clf.classify_batch.return_value = [_make_claim()]
         v.validate(response="r", context="the full context string")
-        clf.classify.assert_called_once_with("claim", "the full context string")
+        clf.classify_batch.assert_called_once_with(["claim"], "the full context string")
 
     def test_aggregator_receives_claim_results(self):
         v, ext, clf, agg = _make_validator()
         claim_result = _make_claim(label=Labels.VALUE_CONTRADICTION)
-        clf.classify.return_value = claim_result
+        clf.classify_batch.return_value = [claim_result, claim_result]
         ext.extract.return_value = ["c1", "c2"]
         v.validate(response="r", context="c")
         args, _ = agg.aggregate.call_args
@@ -105,6 +109,7 @@ class TestCacoValidate:
     def test_no_claims_extracted_still_calls_aggregator(self):
         v, ext, clf, agg = _make_validator()
         ext.extract.return_value = []
+        clf.classify_batch.return_value = []
         agg.aggregate.return_value = ValidationResult(
             score=0.0, is_hallucination=False, claims=(), summary="No claims."
         )
