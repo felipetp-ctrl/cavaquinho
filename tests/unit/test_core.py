@@ -118,6 +118,40 @@ class TestCacoValidate:
         assert result.claims == ()
 
 
+class TestCacoValidateBatch:
+    def test_returns_list_of_results(self):
+        v, *_ = _make_validator()
+        results = v.validate_batch(responses=["r1", "r2"], context="ctx")
+        assert isinstance(results, list)
+        assert len(results) == 2
+
+    def test_shared_context_used_for_all(self):
+        v, ext, clf, agg = _make_validator()
+        v.validate_batch(responses=["r1", "r2"], context="shared ctx")
+        calls = ext.extract.call_args_list
+        assert all(call.args[1] == "shared ctx" for call in calls)
+
+    def test_per_response_contexts(self):
+        v, ext, clf, agg = _make_validator()
+        v.validate_batch(responses=["r1", "r2"], context="ignored", contexts=["c1", "c2"])
+        calls = ext.extract.call_args_list
+        assert calls[0].args[1] == "c1"
+        assert calls[1].args[1] == "c2"
+
+    def test_contexts_length_mismatch_raises(self):
+        v, *_ = _make_validator()
+        with pytest.raises(ValueError, match="contexts length"):
+            v.validate_batch(responses=["r1", "r2"], context="ctx", contexts=["only one"])
+
+
+class TestCacoRepr:
+    def test_repr_contains_threshold_and_classifier(self):
+        v, *_ = _make_validator()
+        r = repr(v)
+        assert "Validator(" in r
+        assert "threshold=" in r
+
+
 class TestCacoThresholdPropagation:
     def test_threshold_forwarded_to_aggregator_constructor(self):
         """Regression test: threshold configured on caco must reach the Aggregator."""

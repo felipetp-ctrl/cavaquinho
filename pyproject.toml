@@ -77,6 +77,8 @@ source = ["cavaquinho"]
 omit = [
     "benchmarks/*",
     "cavaquinho/classifier/deberta.py",  # requires live model — covered by integration tests
+    "cavaquinho/classifier/minicheck.py",  # requires live model — covered by integration tests
+    "cavaquinho/_cli.py",  # CLI entry point — covered by integration tests
 ]
 
 [tool.coverage.report]

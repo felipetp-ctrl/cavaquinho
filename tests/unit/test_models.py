@@ -77,3 +77,30 @@ class TestValidationResult:
         vr = ValidationResult(score=0.0, is_hallucination=False, claims=(), summary="")
         with pytest.raises(AttributeError):
             vr.claims.append(self._make_claim())  # type: ignore[attr-defined]
+
+    def test_repr_hallucination(self):
+        vr = ValidationResult(score=0.8, is_hallucination=True, claims=(self._make_claim(),), summary="bad")
+        assert "HALLUCINATION" in repr(vr)
+        assert "0.8" in repr(vr)
+
+    def test_repr_ok(self):
+        vr = ValidationResult(score=0.1, is_hallucination=False, claims=(), summary="ok")
+        assert "OK" in repr(vr)
+
+    def test_str_returns_summary(self):
+        vr = ValidationResult(score=0.0, is_hallucination=False, claims=(), summary="All good.")
+        assert str(vr) == "All good."
+
+
+class TestClaimResultRepr:
+    def test_repr_short_text(self):
+        cr = ClaimResult(text="short claim", evidence="e", label=Labels.VALUE_ENTAILMENT, score=0.9)
+        r = repr(cr)
+        assert "ENTAILMENT" in r
+        assert "0.9" in r
+
+    def test_repr_long_text_truncated(self):
+        long_text = "a" * 70
+        cr = ClaimResult(text=long_text, evidence="e", label=Labels.VALUE_NEUTRAL, score=0.5)
+        r = repr(cr)
+        assert "..." in r
