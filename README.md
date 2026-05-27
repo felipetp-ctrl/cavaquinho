@@ -32,22 +32,40 @@ pip install "cavaquinho[nli]"
 ## Quickstart
 
 ```python
-import cavaquinho as caco
+from cavaquinho import Validator
 
-validator = caco.caco()
+# The NLI model (~500 MB) loads here — instantiate once and reuse.
+validator = Validator()
 
 result = validator.validate(
     response="The LGPD was created in 2015 during Dilma Rousseff's government.",
     context="The LGPD was enacted on August 14, 2018, by President Michel Temer."
 )
 
-print(result.score)             # 1.0
+print(result.score)             # 0.9998  (≈ 1.0 for strong contradictions)
 print(result.is_hallucination)  # True
 print(result.summary)
 # 1 of 1 claim(s) contradict the provided context.
 # Main conflict: 'The LGPD was created in 2015...'
 # contradicting evidence: 'The LGPD was enacted on August 14, 2018...'. Score: 1.00.
 ```
+
+## CLI
+
+```bash
+cavaquinho validate \
+  --response "The LGPD was created in 2015." \
+  --context "The LGPD was enacted in 2018 by Michel Temer."
+
+# JSON output for pipelines
+cavaquinho validate --response "..." --context "..." --json
+
+# Files and stdin
+cavaquinho validate --response-file resp.txt --context-file ctx.txt
+cavaquinho validate --response "..." --context-file - < ctx.txt
+```
+
+Exit codes: `0` = no hallucination, `1` = hallucination detected, `2` = error.
 
 ## Claim-level inspection
 
@@ -57,7 +75,7 @@ Each claim in the response is verified independently. The result exposes the ful
 for claim in result.claims:
     print(claim.text)      # "The LGPD was created in 2015..."
     print(claim.label)     # Labels.VALUE_CONTRADICTION
-    print(claim.score)     # 1.0
+    print(claim.score)     # 0.9998  (model confidence, rounded to 4 decimal places)
     print(claim.evidence)  # "The LGPD was enacted on August 14, 2018..."
     print(claim.reason)    # "The LGPD was enacted on August 14, 2018..."
 ```
@@ -65,6 +83,9 @@ for claim in result.claims:
 ## Using the result
 
 ```python
+from cavaquinho import Validator, Labels
+
+validator = Validator()
 result = validator.validate(response=response, context=context)
 
 # threshold-based decision
@@ -73,7 +94,7 @@ if result.is_hallucination:
 
 # per-claim decision
 for claim in result.claims:
-    if claim.label == caco.Labels.VALUE_CONTRADICTION and claim.score > 0.8:
+    if claim.label == Labels.VALUE_CONTRADICTION and claim.score > 0.8:
         logger.warning(f"Conflicting claim: {claim.text}")
         logger.warning(f"Context evidence: {claim.evidence}")
 
@@ -82,6 +103,48 @@ if result.score > 0.3:
     ui.show_disclaimer("This response may contain inaccurate information.")
 ```
 
+## Batch validation
+
+```python
+validator = Validator()
+
+results = validator.validate_batch(
+    responses=["Response A.", "Response B.", "Response C."],
+    context="The shared retrieved context.",
+)
+
+# Or with per-response contexts
+results = validator.validate_batch(
+    responses=responses,
+    contexts=contexts,  # list[str], same length as responses
+)
+```
+
+## Detection limits and sensitivity
+
+Cavaquinho verifies *faithfulness to the provided context*, not factual accuracy against external knowledge.
+
+**When detection works best:**
+- Claims with specific details that directly contradict facts stated in the context.
+- `"The LGPD was created in 2015 during Dilma Rousseff's government."` detects better than `"The LGPD was created in 2015."` — more detail gives the NLI model stronger signal.
+
+**Known false-negative patterns:**
+- **Short or vague claims** — less context for the model to infer a contradiction. Score may sit just below the threshold.
+- **Factual errors absent from context** — if the context doesn't contradict the claim, the result will be `NEUTRAL`, not `CONTRADICTION`. This is correct faithfulness behaviour, not a miss.
+- **True claims near the threshold** — a faithful claim may score `0.4999` instead of `ENTAILMENT`; inspect `result.score` numerically for critical pipelines.
+
+**Adjusting sensitivity with `threshold`:**
+
+```python
+# More sensitive — catches more hallucinations, more false positives
+validator = Validator(threshold=0.3)
+
+# More conservative — fewer false positives, may miss weak contradictions
+validator = Validator(threshold=0.7)
+```
+
+For critical pipelines, inspect `result.score` directly instead of relying solely on `result.is_hallucination`.
+
 ## RAG integration
 
 The context parameter accepts the documents your retriever already returned. No additional steps are required.
@@ -89,32 +152,32 @@ The context parameter accepts the documents your retriever already returned. No 
 ### LangChain
 
 ```python
-import cavaquinho as caco
+from cavaquinho import Validator
 
 source_docs = retriever.invoke(query)
 context = "\n".join([doc.page_content for doc in source_docs])
 response = llm.invoke(query)
 
-validator = caco.caco()
+validator = Validator()
 result = validator.validate(response=response, context=context)
 ```
 
 ### LlamaIndex
 
 ```python
-import cavaquinho as caco
+from cavaquinho import Validator
 
 response = query_engine.query("What is the LGPD?")
 context = "\n".join([node.text for node in response.source_nodes])
 
-validator = caco.caco()
+validator = Validator()
 result = validator.validate(response=str(response), context=context)
 ```
 
 ### Direct LLM call
 
 ```python
-import cavaquinho as caco
+from cavaquinho import Validator
 from openai import OpenAI
 
 client = OpenAI()
@@ -129,7 +192,7 @@ response = client.chat.completions.create(
     ]
 ).choices[0].message.content
 
-validator = caco.caco()
+validator = Validator()
 result = validator.validate(response=response, context=context)
 ```
 
@@ -138,13 +201,13 @@ result = validator.validate(response=response, context=context)
 All components have sensible defaults. Each can be replaced independently.
 
 ```python
-from cavaquinho import caco
+from cavaquinho import Validator
 from cavaquinho.extractor import LLMExtractor
 from cavaquinho.classifier import DeBERTaClassifier
 from cavaquinho.aggregator import Aggregator
 from openai import OpenAI
 
-validator = caco(
+validator = Validator(
     extractor=LLMExtractor(
         llm_fn=lambda p: OpenAI().chat.completions.create(
             model="gpt-4o",
@@ -165,7 +228,7 @@ validator = caco(
 ### Portuguese
 
 ```python
-validator = caco.caco(language="portuguese")
+validator = Validator(language="portuguese")
 
 result = validator.validate(
     response="A LGPD foi criada em 2015.",
@@ -179,7 +242,7 @@ Three components run in sequence:
 
 **1. Claim extraction.** The response is split into atomic sentences using NLTK. Each sentence is treated as an independent, verifiable assertion. An `LLMExtractor` is available for higher-precision decomposition when a language model client is available.
 
-**2. NLI classification.** For each claim, the context is split into sentences and the claim is compared against each one using a fine-tuned DeBERTa NLI model (`cross-encoder/nli-deberta-v3-base`). The sentence with the highest contradiction score is used as the `evidence` field. Classification runs concurrently across all claims via `ThreadPoolExecutor`.
+**2. NLI classification.** For each claim, the context is split into sentences and the claim is compared against each one using a fine-tuned DeBERTa NLI model (`cross-encoder/nli-deberta-v3-base`). All (sentence, claim) pairs across all claims are submitted in a single batched model call. The sentence with the highest contradiction score is used as the `evidence` field — if any sentence contradicts the claim, the result is `CONTRADICTION` regardless of other scores.
 
 **3. Weighted aggregation.** Scores are combined using label-weighted averaging. Contradiction labels carry full weight (1.0), neutral labels carry partial weight (0.5), and entailment labels carry no weight (0.0). The aggregated score is compared against a configurable threshold to produce the final `is_hallucination` decision.
 
@@ -189,7 +252,7 @@ response
     ▼
 [ RuleExtractor / LLMExtractor ]   →   ["claim 1", "claim 2", ...]
     │
-    ▼ (concurrent)
+    ▼ (batched)
 [ DeBERTaClassifier            ]   →   [ClaimResult, ClaimResult, ...]
     │
     ▼
@@ -210,10 +273,10 @@ class MyExtractor(ExtractorContract):
         ...
 
 class MyClassifier(ClassifierContract):
-    def classify(self, claim: str, context: str) -> ClaimResult:
+    def classify_batch(self, claims: list[str], context: str) -> list[ClaimResult]:
         ...
 
-validator = caco.caco(extractor=MyExtractor(), classifier=MyClassifier())
+validator = Validator(extractor=MyExtractor(), classifier=MyClassifier())
 ```
 
 ## Output schema
@@ -224,7 +287,7 @@ class ClaimResult:
     text: str            # extracted claim
     evidence: str        # context sentence used in comparison
     label: Labels        # VALUE_ENTAILMENT | VALUE_NEUTRAL | VALUE_CONTRADICTION
-    score: float         # model confidence 0.0–1.0
+    score: float         # model confidence 0.0–1.0, rounded to 4 decimal places
     reason: str | None   # contradicting evidence sentence when label is VALUE_CONTRADICTION
 
 @dataclass(frozen=True)
