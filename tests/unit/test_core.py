@@ -120,6 +120,7 @@ class TestValidatorValidate:
         assert result.claims == ()
 
 
+
 class TestValidatorValidateBatch:
     def test_returns_list_of_results(self):
         v, *_ = _make_validator()
@@ -152,6 +153,7 @@ class TestValidatorRepr:
         r = repr(v)
         assert "Validator(" in r
         assert "threshold=" in r
+
 
 
 class TestValidatorThresholdPropagation:
