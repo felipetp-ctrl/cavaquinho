@@ -306,11 +306,11 @@ Evaluated on [HaluEval QA](https://github.com/RUCAIBox/HaluEval) (Zhang et al., 
 Each sample produces two response/context pairs: one hallucinated, one faithful.
 Full pipeline: `RuleExtractor → DeBERTaClassifier → Aggregator` (threshold 0.5).
 
-> **Results pending first run.** Run the benchmark locally and the table below will be populated.
+500 samples, threshold 0.5. FNR = false-negative rate (missed hallucinations).
 
 | Model | Accuracy | Precision | Recall | F1 | FNR |
 |-------|----------|-----------|--------|----|-----|
-| `cross-encoder/nli-deberta-v3-base` *(default)* | — | — | — | — | — |
+| `cross-encoder/nli-deberta-v3-base` *(default)* | 0.608 | 0.627 | 0.557 | 0.590 | 0.443 |
 
 Reproduce with: `python -m benchmarks.faithfulness_benchmark --n 500 --save results/faithfulness.json`
 

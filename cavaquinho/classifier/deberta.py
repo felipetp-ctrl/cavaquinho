@@ -47,6 +47,7 @@ class DeBERTaClassifier(ClassifierContract):
         "neutral": Labels.VALUE_NEUTRAL,
         "contradiction": Labels.VALUE_CONTRADICTION,
     }
+    _CONTRADICTION_THRESHOLD = 0.5
 
     def __init__(
         self,
@@ -54,6 +55,7 @@ class DeBERTaClassifier(ClassifierContract):
         device: str | int | None = None,
         language: str = "english",
         batch_size: int = 32,
+        calibrator_path: str | None = None,
     ):
         if language not in SUPPORTED_LANGUAGES:
             raise ValueError(
@@ -68,7 +70,18 @@ class DeBERTaClassifier(ClassifierContract):
             task="text-classification",
             model=model_name,
             device=self.device,
+            top_k=None,
         )
+        # Optional calibrator (Platt / sklearn estimator) to map raw
+        # contradiction probabilities to calibrated probabilities.
+        self.calibrator = None
+        if calibrator_path is not None:
+            try:
+                import joblib
+
+                self.calibrator = joblib.load(calibrator_path)
+            except Exception:
+                self.calibrator = None
 
     def classify(self, claim: str, context: str) -> ClaimResult:
         """Classify the faithfulness of *claim* against *context*."""
@@ -78,7 +91,7 @@ class DeBERTaClassifier(ClassifierContract):
 
         pairs = [{"text": s, "text_pair": claim} for s in sentences]
         raw = self.pipeline(pairs, batch_size=self.batch_size, truncation=True, max_length=512)
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else [raw]  # type: ignore[assignment]
+        items: list[Any] = raw if isinstance(raw, list) else [raw]  # type: ignore[assignment]
         return self._select_best(claim, sentences, items)
 
     def classify_batch(self, claims: list[str], context: str) -> list[ClaimResult]:
@@ -111,7 +124,7 @@ class DeBERTaClassifier(ClassifierContract):
             for s in sentences
         ]
         raw = self.pipeline(all_pairs, batch_size=self.batch_size, truncation=True, max_length=512)
-        all_items: list[dict[str, Any]] = raw if isinstance(raw, list) else [raw]  # type: ignore[assignment]
+        all_items: list[Any] = raw if isinstance(raw, list) else [raw]  # type: ignore[assignment]
 
         return [
             self._select_best(claim, sentences, all_items[i * m: (i + 1) * m])
@@ -122,51 +135,108 @@ class DeBERTaClassifier(ClassifierContract):
         self,
         claim: str,
         sentences: list[str],
-        items: list[dict[str, Any]],
+        items: list[Any],
     ) -> ClaimResult:
         """Pick the decisive (sentence, label, score) from a list of NLI results.
 
-        If any sentence yields a contradiction, the highest-scoring contradiction
-        wins — regardless of whether another sentence had a higher confidence for
-        a different label. This prevents neutral:0.92 from masking contradiction:0.88.
+        Uses direct contradiction probability when deciding contradiction: if any
+        sentence reaches ``_CONTRADICTION_THRESHOLD``, the highest contradiction
+        score wins regardless of another sentence's top-label confidence.
         """
-        best_contradiction_score = -1.0
+        best_contradiction_score = 0.0
         best_contradiction_sentence: str | None = None
         best_overall_score = -1.0
         best_overall_sentence: str | None = None
-        best_overall_item: dict[str, Any] | None = None
+        best_overall_label: str | None = None
 
         for sentence, item in zip(sentences, items):
-            label = item["label"].lower()
-            score = item["score"]
+            label, score, contradiction_score = self._extract_scores(item)
 
-            if label == "contradiction" and score > best_contradiction_score:
-                best_contradiction_score = score
+            if contradiction_score > best_contradiction_score:
+                best_contradiction_score = contradiction_score
                 best_contradiction_sentence = sentence
 
             if score > best_overall_score:
                 best_overall_score = score
                 best_overall_sentence = sentence
-                best_overall_item = item
+                best_overall_label = label
 
-        if best_overall_item is None:
+        if best_overall_label is None:
             return ClaimResult(text=claim, evidence="", label=Labels.VALUE_NEUTRAL, score=0.0, reason=None)
 
-        if best_contradiction_sentence is not None:
+        if (
+            best_contradiction_sentence is not None
+            and best_contradiction_score >= self._CONTRADICTION_THRESHOLD
+        ):
+            score = best_contradiction_score
+            _cal = getattr(self, "calibrator", None)
+            if _cal is not None:
+                try:
+                    import numpy as _np
+
+                    if hasattr(_cal, "predict_proba"):
+                        score = float(_cal.predict_proba(_np.array([[score]]))[:, 1])
+                    else:
+                        score = float(_cal.predict(_np.array([score])))
+                except Exception:
+                    pass
+
             return ClaimResult(
                 text=claim,
                 evidence=best_contradiction_sentence,
                 label=Labels.VALUE_CONTRADICTION,
-                score=round(best_contradiction_score, 4),
+                score=round(score, 4),
                 reason=best_contradiction_sentence,
             )
 
-        top_label = best_overall_item["label"].lower()
-        top_score = best_overall_item["score"]
+        # If no sentence passed the contradiction threshold, report the
+        # maximum contradiction probability seen across sentences as the
+        # unified score. This allows the aggregator to weight by p(contradicti
+        # on) even when the top label wasn't contradiction.
+        score = best_contradiction_score
+        _cal = getattr(self, "calibrator", None)
+        if _cal is not None:
+            try:
+                import numpy as _np
+
+                if hasattr(_cal, "predict_proba"):
+                    score = float(_cal.predict_proba(_np.array([[score]]))[:, 1])
+                else:
+                    score = float(_cal.predict(_np.array([score])))
+            except Exception:
+                pass
+
         return ClaimResult(
             text=claim,
             evidence=best_overall_sentence or "",
-            label=self._LABEL_MAP[top_label],
-            score=round(top_score, 4),
+            label=self._LABEL_MAP[best_overall_label],
+            score=round(score, 4),
             reason=None,
         )
+
+    @staticmethod
+    def _extract_scores(item: Any) -> tuple[str, float, float]:
+        """Return (top_label, top_score, contradiction_score) for one sentence output."""
+        if isinstance(item, dict):
+            label = item["label"].lower()
+            score = float(item["score"])
+            contradiction_score = score if label == "contradiction" else 0.0
+            return label, score, contradiction_score
+
+        if isinstance(item, list):
+            top_label = "neutral"
+            top_score = -1.0
+            contradiction_score = 0.0
+            for entry in item:
+                label = entry["label"].lower()
+                score = float(entry["score"])
+                if score > top_score:
+                    top_label = label
+                    top_score = score
+                if label == "contradiction":
+                    contradiction_score = score
+            if top_score < 0.0:
+                return "neutral", 0.0, 0.0
+            return top_label, top_score, contradiction_score
+
+        return "neutral", 0.0, 0.0

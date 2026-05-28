@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cavaquinho"
-version = "0.3.0"
+version = "0.2.5"
 description = "A lightweight Python library for hallucination detection and explainability in LLM responses, with claim-level faithfulness verification."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "Felipe Tomé Pereira" }
+    { name = "Felipe Tomé Pereira", email = "felipetomepereira@gmail.com" }
 ]
 keywords = [
     "hallucination",
@@ -64,6 +64,7 @@ cavaquinho = "cavaquinho._cli:main"
 Homepage = "https://github.com/felipetp-ctrl/cavaquinho"
 Repository = "https://github.com/felipetp-ctrl/cavaquinho"
 Issues = "https://github.com/felipetp-ctrl/cavaquinho/issues"
+Changelog = "https://github.com/felipetp-ctrl/cavaquinho/blob/master/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
