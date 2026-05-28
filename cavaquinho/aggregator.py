@@ -7,19 +7,53 @@ from typing import Optional
 from .config import DEFAULT_THRESHOLD, SUPPORTED_LANGUAGES
 from .models import ClaimResult, Labels, ValidationResult
 
+# Per-language summary templates.
+# Keys: "no_contradiction", "with_contradiction", "main_conflict",
+#       "no_reason", "empty"
+_TEMPLATES: dict[str, dict[str, str]] = {
+    "english": {
+        "no_contradiction": "No contradictions found across {total} verified claim(s). Score: {score:.2f}.",
+        "with_contradiction": (
+            "{n_contradictions} of {total} claim(s) contradict the provided context. "
+            "Main conflict: '{claim_text}' — {reason_phrase}. Score: {score:.2f}."
+        ),
+        "reason_phrase": "contradicting evidence: '{reason}'",
+        "no_reason": "no specific evidence identified",
+        "empty": "No claims were found to verify.",
+    },
+    "portuguese": {
+        "no_contradiction": (
+            "Nenhuma contradição encontrada entre {total} afirmação(ões) verificada(s). Score: {score:.2f}."
+        ),
+        "with_contradiction": (
+            "{n_contradictions} de {total} afirmação(ões) contradizem o contexto. "
+            "Principal conflito: '{claim_text}' — {reason_phrase}. Score: {score:.2f}."
+        ),
+        "reason_phrase": "evidência contraditória: '{reason}'",
+        "no_reason": "nenhuma evidência específica identificada",
+        "empty": "Nenhuma afirmação foi encontrada para verificar.",
+    },
+}
+
 
 class Aggregator:
     """Combines per-claim NLI results into a single :class:`~cavaquinho.models.ValidationResult`.
 
-    The aggregation formula computes a weighted average of per-claim scores,
-    where each label class carries a configurable weight:
+    **Scoring semantics** — the aggregator computes a *weighted mean* over all
+    claims, where each claim contributes its NLI confidence score multiplied
+    by a label weight:
 
-    - ``VALUE_CONTRADICTION`` → 1.0  (full contribution to hallucination score)
-    - ``VALUE_NEUTRAL``       → 0.5  (partial contribution)
-    - ``VALUE_ENTAILMENT``    → 0.0  (no contribution)
+    - ``VALUE_CONTRADICTION`` → 1.0 (full contribution)
+    - ``VALUE_NEUTRAL``       → 0.5 (partial contribution)
+    - ``VALUE_ENTAILMENT``    → 0.0 (no contribution)
 
-    The final score is compared against *threshold* to produce the binary
-    ``is_hallucination`` decision.
+    The denominator is the **total number of claims**, so a single
+    contradiction in a long response will yield a proportionally low score.
+    This is intentional: the library treats faithfulness as a property of the
+    whole response — a response that is 90% correct and 10% contradictory is
+    meaningfully different from one that is entirely contradictory.  Callers
+    that need to flag *any* contradiction should inspect
+    ``result.claims`` directly.
 
     Args:
         weights: Optional mapping of :class:`~cavaquinho.models.Labels` to
@@ -69,22 +103,18 @@ class Aggregator:
                 score=0.0,
                 is_hallucination=False,
                 claims=(),
-                summary=self._empty_summary(),
+                summary=_TEMPLATES[self.language]["empty"],
             )
 
-        claim_avg: list[float] = []
         contradiction_claims: list[ClaimResult] = []
+        weighted_sum = 0.0
 
         for claim in claims:
-            label = claim.label
-            score = claim.score
-            weighted_avg = score * self.weights.get(label, 0.0)
-            claim_avg.append(weighted_avg)
-
-            if label == Labels.VALUE_CONTRADICTION:
+            weighted_sum += claim.score * self.weights.get(claim.label, 0.0)
+            if claim.label == Labels.VALUE_CONTRADICTION:
                 contradiction_claims.append(claim)
 
-        final_score = sum(claim_avg) / len(claim_avg)
+        final_score = weighted_sum / len(claims)
         is_hallucination = final_score > self.threshold
         summary = self._build_summary(claims, contradiction_claims, final_score)
 
@@ -99,70 +129,29 @@ class Aggregator:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _empty_summary(self) -> str:
-        if self.language == "portuguese":
-            return "Nenhuma afirmação foi encontrada para verificar."
-        return "No claims were found to verify."
-
     def _build_summary(
         self,
         claims: list[ClaimResult],
         contradictions: list[ClaimResult],
         score: float,
     ) -> str:
+        t = _TEMPLATES[self.language]
         total = len(claims)
         n_contradictions = len(contradictions)
 
-        if self.language == "portuguese":
-            return self._build_summary_pt(total, n_contradictions, contradictions, score)
-        return self._build_summary_en(total, n_contradictions, contradictions, score)
-
-    def _build_summary_en(
-        self,
-        total: int,
-        n_contradictions: int,
-        contradictions: list[ClaimResult],
-        score: float,
-    ) -> str:
         if n_contradictions == 0:
-            return (
-                f"No contradictions found across {total} verified claim(s). "
-                f"Score: {score:.2f}."
-            )
+            return t["no_contradiction"].format(total=total, score=score)
 
         most_severe = max(contradictions, key=lambda c: c.score)
-        reason_text = (
-            f"contradicting evidence: '{most_severe.reason}'"
+        reason_phrase = (
+            t["reason_phrase"].format(reason=most_severe.reason)
             if most_severe.reason
-            else "no specific evidence identified"
+            else t["no_reason"]
         )
-        return (
-            f"{n_contradictions} of {total} claim(s) contradict the provided context. "
-            f"Main conflict: '{most_severe.text}' — {reason_text}. "
-            f"Score: {score:.2f}."
-        )
-
-    def _build_summary_pt(
-        self,
-        total: int,
-        n_contradictions: int,
-        contradictions: list[ClaimResult],
-        score: float,
-    ) -> str:
-        if n_contradictions == 0:
-            return (
-                f"Nenhuma contradição encontrada entre {total} "
-                f"afirmação(ões) verificada(s). Score: {score:.2f}."
-            )
-
-        most_severe = max(contradictions, key=lambda c: c.score)
-        reason_text = (
-            f"evidência contraditória: '{most_severe.reason}'"
-            if most_severe.reason
-            else "nenhuma evidência específica identificada"
-        )
-        return (
-            f"{n_contradictions} de {total} afirmação(ões) contradizem o contexto. "
-            f"Principal conflito: '{most_severe.text}' — {reason_text}. "
-            f"Score: {score:.2f}."
+        return t["with_contradiction"].format(
+            n_contradictions=n_contradictions,
+            total=total,
+            claim_text=most_severe.text,
+            reason_phrase=reason_phrase,
+            score=score,
         )

@@ -1,4 +1,4 @@
-"""Main entry point — the :class:`Validator` / :class:`caco` validator."""
+"""Main entry point — the :class:`Validator` / :class:`Caco` validator."""
 
 from __future__ import annotations
 
@@ -153,4 +153,16 @@ class Validator:
         )
 
 
-caco = Validator  # backwards-compatible alias
+Caco = Validator  # PEP 8–compliant alias
+
+
+def __getattr__(name: str):
+    if name == "caco":
+        import warnings
+        warnings.warn(
+            "'caco' is deprecated and will be removed in v1.0. Use 'Caco' or 'Validator'.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return Validator
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

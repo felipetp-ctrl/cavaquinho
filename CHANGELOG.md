@@ -1,31 +1,58 @@
 # Changelog
 
 All notable changes to cavaquinho are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
+
+---
+
+## [Unreleased]
+
+---
+
+## [0.2.5] — 2026-05-27
+
+### Added
+- `ruff` as mandatory CI gate (zero violations enforced on every push)
+- `TestAggregateDocumentedLimitations`: pins edge-case behaviour (0 claims, 100 % contradictions, threshold boundary)
+- `TestDocumentedLimitations` in extractor: regression tests for limitations listed in README
+- `TestCacoAlias`: verifies `DeprecationWarning` on legacy alias
+- `benchmarks/faithfulness_benchmark.py`: evaluates full pipeline on HaluEval QA dataset
+- `docs/evaluation.md`: evaluation methodology, metrics, and local reproduction instructions
+- `docs/PRD.md`: product roadmap v0.3 → v1.0
+
+### Changed
+- Renamed class `caco` → `Caco` (PEP 8); `caco` kept as alias with `DeprecationWarning`
+- Refactored `Aggregator`: replaced `_build_summary_en` / `_build_summary_pt` with a single method backed by a language-keyed template dict
+- Documented score semantics explicitly (weighted mean; dilution on sparse contradiction is intentional behaviour)
+- Pinned dependency upper bounds: `transformers<5`, `torch<3`, `nltk<4`
+- Added author email and `Changelog` URL to PyPI metadata
+
+### Fixed
+- CI coverage configuration: omit CLI and live-model classifiers; add previously missing unit tests
 
 ---
 
 ## [0.2.4] — 2026-05-26
 
 ### Added
-- **CLI** — `cavaquinho validate` command for one-off validation from the terminal or CI pipelines. `--response`/`--response-file`, `--context`/`--context-file` (accepts `-` for stdin), `--json`, `--threshold`, `--language`. Exit codes: `0` = ok, `1` = hallucination, `2` = error.
-- **`Validator` class** — PascalCase name for `caco`. `caco` preserved as backwards-compatible alias.
+- **CLI** — `cavaquinho validate` command. Options: `--response`/`--response-file`, `--context`/`--context-file` (accepts `-` for stdin), `--json`, `--threshold`, `--language`. Exit codes: `0` = ok, `1` = hallucination, `2` = error.
+- **`Validator` class** — PascalCase name for `caco`; `caco` preserved as backwards-compatible alias.
 - **`validate_batch()`** — validate multiple responses against a shared or per-response context in one call.
-- **`classify_batch()`** on `DeBERTaClassifier` — all (sentence, claim) pairs submitted in a single batched pipeline call, maximising GPU/MPS throughput.
-- **`preload()`** on `Validator` — no-op warm-up hook for explicit server initialisation.
+- **`classify_batch()`** on `DeBERTaClassifier` — all (sentence, claim) pairs submitted in a single batched pipeline call.
+- **`preload()`** on `Validator` — warm-up hook for explicit server initialisation.
 - **`__version__`** exported from `cavaquinho`.
-- **`__repr__`** on `ClaimResult` and `ValidationResult` — compact single-line output for REPL use.
+- **`__repr__`** on `ClaimResult` and `ValidationResult` — compact single-line output.
 - **`__str__`** on `ValidationResult` — returns `result.summary`.
 - **`MiniCheckClassifier.neutral_band`** — maps borderline P(supported) scores to `VALUE_NEUTRAL`. Default: `(0.4, 0.6)`.
 - Subpackage re-exports: `from cavaquinho.extractor import LLMExtractor` and `from cavaquinho.classifier import DeBERTaClassifier` now work as documented.
 
 ### Fixed
-- **`DeBERTaClassifier` label selection** — a high-confidence `neutral` score from one context sentence could previously suppress a lower-score `contradiction` from another. Now any detected contradiction wins.
-- **`LLMExtractor` JSON parser** — fence stripping now handles ` ```json`, ` ```python`, leading spaces, and other fence variants that caused `JSONDecodeError`.
+- **`DeBERTaClassifier` label selection** — any detected contradiction now wins over a higher-confidence neutral from another sentence.
+- **`LLMExtractor` JSON parser** — fence stripping handles ` ```json`, ` ```python`, leading spaces, and other variants.
 
 ### Changed
-- `Validator.validate()` uses `classify_batch()` instead of `ThreadPoolExecutor` + `classify()`. Faster on GPU/MPS; no thread overhead on CPU.
+- `Validator.validate()` uses `classify_batch()` instead of `ThreadPoolExecutor` + `classify()`.
 
 ---
 
@@ -41,7 +68,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - README: "Detection limits and sensitivity" section with threshold tuning guide.
-- All README examples updated to `from cavaquinho import Validator`.
 
 ---
 
@@ -55,94 +81,51 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [0.2.1] — 2026-05-20
 
 ### Changed
-- Version bump to publish updated README to PyPI.
+- Version bump to publish updated README to PyPI (no code changes).
 
 ---
 
 ## [0.2.0] — 2026-05-25
 
-### Fixed
-
-- **Threshold propagation** — `caco(threshold=X)` now correctly forwards the
-  configured value to `Aggregator`.  Previously the threshold was stored on the
-  `caco` instance but the default `Aggregator` always used `DEFAULT_THRESHOLD`,
-  silently ignoring the user's setting.
-
-- **Evidence selection** — `DeBERTaClassifier.classify` now correctly returns
-  the best available result when no contradiction is found.  The previous
-  implementation tracked only the highest contradiction score, so claims with
-  strong entailment evidence were returned as `neutral` with `score=0.0`.
-
-- **NLI input format** — changed from raw string concatenation
-  (`f"{sentence} [SEP] {claim}"`) to the canonical `{"text": ..., "text_pair":
-  ...}` dict accepted by the HuggingFace cross-encoder pipeline.
-
-- **`reason` field now surfaces evidence** — the `ClaimResult.reason` field for
-  contradictions now contains the contradicting context sentence instead of
-  repeating the label string.  Summary messages were updated accordingly.
-
-- **Silent exception swallowing in `LLMExtractor`** — failures in the LLM call
-  now emit a `logging.WARNING` with the exception type and message before
-  falling back to `RuleExtractor`.
-
-- **`max_workers=0` crash when no claims are extracted** — `ThreadPoolExecutor`
-  received `max_workers=0` when the extractor returned an empty list, raising a
-  `ValueError`.  The value is now floored at 1.
+### Added
+- 65 unit tests covering `models`, `aggregator`, `extractor`, and `core` without requiring a real NLI model. Coverage: 92.8 %.
+- GitHub Actions CI: test matrix Python 3.10–3.13, coverage gate ≥ 80 %.
+- GitHub Actions publish: PyPI trusted publishing on release tag.
+- `benchmarks/nli_benchmark.py`: evaluates NLI classifiers on ASSIN2-PT validation split.
+- Full docstrings on all public APIs.
 
 ### Changed
+- `ValidationResult.claims` is now `tuple[ClaimResult, ...]` (immutable).
+- `torch` moved to optional dependency — `pip install "cavaquinho[nli]"`.
+- `DeBERTaClassifier` detects MPS and uses it automatically on Apple Silicon.
+- `ThreadPoolExecutor` worker count bounded at `min(n_claims, cpu_count)`.
+- `LLMExtractor.max_claims` default raised from 10 to 20.
 
-- **`ValidationResult.claims` is now `tuple[ClaimResult, ...]`** — previously
-  `list[ClaimResult]`, which allowed mutation despite the dataclass being
-  `frozen=True`.  This is a breaking change for code that mutated the list;
-  iteration and indexing are unaffected.
-
-- **`torch` moved to optional dependency** — install with
-  `pip install "cavaquinho[nli]"` to include `transformers` and `torch`.  The
-  default install no longer pulls ~2 GB of PyTorch for users who supply a
-  custom classifier.
-
-- **Apple Silicon (MPS) device support** — `DeBERTaClassifier` now detects
-  `torch.backends.mps.is_available()` and uses `"mps"` automatically when
-  neither CUDA nor explicit device is configured.
-
-- **`ThreadPoolExecutor` worker count bounded** — capped at
-  `min(n_claims, cpu_count)` to avoid unbounded thread creation on long
-  responses.
-
-- **`LLMExtractor.max_claims` default raised from 10 to 20** — the previous
-  limit could silently under-report contradictions in longer responses.
-
-- **Prompt example typo corrected** — "Spiders has 8 legs" →
-  "Spiders have 8 legs."
-
-### Added
-
-- **Unit test suite** — 65 tests covering `models`, `aggregator`, `extractor`,
-  and `core` without requiring a real NLI model.
-
-- **CI workflow** (`ci.yml`) — runs the test suite on Python 3.10–3.13 via
-  GitHub Actions, with coverage enforcement (≥ 80 %).
-
-- **Publish workflow** (`publish.yml`) — builds and publishes to PyPI on GitHub
-  release using trusted publishing (no stored API token required).
-
-- **Benchmark script** (`benchmarks/nli_benchmark.py`) — evaluates NLI
-  classifier models on the ASSIN2 Portuguese validation split (500 pairs).
-  Benchmark results for `cross-encoder/nli-deberta-v3-base` vs.
-  `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli` are documented in the README.
-
-- **Docstrings** — all public classes, methods, and module-level constants now
-  have full docstrings.
+### Fixed
+- `threshold` now correctly forwarded from `caco()` to `Aggregator`.
+- Evidence selection returns best overall result when no contradiction is found.
+- NLI input uses `{"text": ..., "text_pair": ...}` dict instead of raw `[SEP]` concatenation.
+- `reason` field surfaces the contradicting sentence, not the label string.
+- `LLMExtractor` logs a warning on fallback instead of silently swallowing the error.
+- `max_workers` floored at 1 to avoid `ValueError` on empty claim list.
 
 ---
 
-## [0.1.0] — 2025-03-01
+## [0.1.0] — 2026-05-23
 
 Initial release.
 
-- Claim extraction via NLTK sentence tokenisation
+- Claim extraction via NLTK sentence tokenisation (`RuleExtractor`) and LLM-based atomic decomposition (`LLMExtractor`)
 - NLI classification via `cross-encoder/nli-deberta-v3-base`, fully local
 - Label-weighted score aggregation with configurable threshold
 - English and Portuguese language support
-- Pluggable extractor and classifier interfaces
-- `LLMExtractor` for LLM-based atomic claim decomposition
+- Pluggable extractor and classifier interfaces (`BaseExtractor`, `BaseClassifier`, `BaseAggregator`)
+
+[Unreleased]: https://github.com/felipetp-ctrl/cavaquinho/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/felipetp-ctrl/cavaquinho/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/felipetp-ctrl/cavaquinho/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/felipetp-ctrl/cavaquinho/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/felipetp-ctrl/cavaquinho/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/felipetp-ctrl/cavaquinho/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/felipetp-ctrl/cavaquinho/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/felipetp-ctrl/cavaquinho/releases/tag/v0.1.0
